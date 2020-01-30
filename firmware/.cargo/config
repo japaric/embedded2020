@@ -1,0 +1,8 @@
+[target.thumbv7em-none-eabihf]
+runner = "dap-ll -v 0d28 -p 0204"
+rustflags = [
+  "-C", "link-arg=-Tlink.x",
+]
+
+[build]
+target = "thumbv7em-none-eabihf" # Cortex-M4F

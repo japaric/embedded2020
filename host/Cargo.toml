@@ -1,0 +1,5 @@
+[workspace]
+members = [
+  "cmsis-dap",
+  "dap-ll",
+]

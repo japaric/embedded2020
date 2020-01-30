@@ -25,5 +25,9 @@ setup.
 Just run
 
 ``` console
-$ cargo r --example leds --release
+$ cargo r --example led --release
+     Running `dap-ll -v 0d28 -p 0204 led`
+loaded section `.vectors` (256 B) in 11.990214ms
+loaded section `.text` (48 B) in 3.959742ms
+booting program
 ```

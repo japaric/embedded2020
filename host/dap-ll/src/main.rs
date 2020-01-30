@@ -50,10 +50,10 @@ fn main() -> Result<(), anyhow::Error> {
     for sect in elf.section_iter() {
         let is_allocatable = sect.flags() & SHF_ALLOC != 0;
 
-        if is_allocatable {
+        let size = sect.size();
+        if is_allocatable && size != 0 {
             let name = sect.get_name(elf).map_err(anyhow::Error::msg)?;
             let address = sect.address();
-            let size = sect.size();
             let max = u64::from(u32::max_value());
             if address > max || address + size > max {
                 return Err(anyhow!(

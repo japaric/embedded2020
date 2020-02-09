@@ -1,0 +1,14 @@
+[package]
+authors = ["Jorge Aparicio <jorge@japaric.io>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+name = "semidap"
+publish = false
+version = "0.0.0"
+
+[dependencies]
+consts = { path = "../../shared/consts" }
+proc-macro-hack = "0.5.11"
+proc-macro-nested = "0.1.3"
+semidap-macros = { path = "../../host/semidap-macros" }
+ufmt-write = "0.1.0"

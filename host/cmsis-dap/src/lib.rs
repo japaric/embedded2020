@@ -100,14 +100,16 @@ impl crate::Dap {
         );
         self.swj_clock(DEFAULT_SWD_FREQUENCY)?;
 
-        info!("configuring transfer to retry on WAIT responses from the target");
+        info!(
+            "configuring transfer to retry on WAIT responses from the target"
+        );
         self.transfer_configure(0, DEFAULT_WAIT_RETRY, 0)?;
 
         info!("switching the target's connection mode from JTAG to SWD");
         self.swj_sequence(dap::JTAG_TO_SWD_SWJ_SEQUENCE)?;
 
         // XXX for some reason debug power-up fails without first reading DPIDR
-        let dpidr = self.read_adiv5_register(adiv5::Register::DP_DPIDR)?;
+        let dpidr = self.read_register(adiv5::Register::DP_DPIDR)?;
         if (dpidr & ((1 << 12) - 1))
             != (adiv5::DP_DPIDR_RESERVED | adiv5::DP_DPIDR_MANUFACTURER_ARM)
         {
@@ -133,16 +135,20 @@ impl crate::Dap {
         // // CDBGPWRUPACK are asserted HIGH. If CDBGPWRUPREQ or CDBGPWRUPACK is
         // // LOW, any AP transfer generates an immediate fault response.", section
         // // 2.4.2 of ADIv5
-        let stat = self.read_adiv5_register(adiv5::Register::DP_STAT)?;
+        let stat = self.read_register(adiv5::Register::DP_STAT)?;
         let stat = if stat & adiv5::DP_STAT_CDBGPWRUPACK == 0 {
             debug!("debug power-up request");
             self.push_dap_transfer_request(
                 adiv5::Register::DP_CTRL,
                 dap::Request::Write(
-                    (stat & adiv5::DP_CTRL_CSYSPWRUPREQ) | adiv5::DP_CTRL_CDBGPWRUPREQ,
+                    (stat & adiv5::DP_CTRL_CSYSPWRUPREQ)
+                        | adiv5::DP_CTRL_CDBGPWRUPREQ,
                 ),
             );
-            self.push_dap_transfer_request(adiv5::Register::DP_STAT, dap::Request::Read);
+            self.push_dap_transfer_request(
+                adiv5::Register::DP_STAT,
+                dap::Request::Read,
+            );
             let stat = self.execute_dap_transfer()?[0];
             if stat & adiv5::DP_STAT_CDBGPWRUPACK == 0 {
                 return Err(anyhow!("debug power-up request failed"));
@@ -157,10 +163,14 @@ impl crate::Dap {
             self.push_dap_transfer_request(
                 adiv5::Register::DP_CTRL,
                 dap::Request::Write(
-                    (stat & adiv5::DP_CTRL_CDBGPWRUPREQ) | adiv5::DP_CTRL_CSYSPWRUPREQ,
+                    (stat & adiv5::DP_CTRL_CDBGPWRUPREQ)
+                        | adiv5::DP_CTRL_CSYSPWRUPREQ,
                 ),
             );
-            self.push_dap_transfer_request(adiv5::Register::DP_STAT, dap::Request::Read);
+            self.push_dap_transfer_request(
+                adiv5::Register::DP_STAT,
+                dap::Request::Read,
+            );
             let stat = self.execute_dap_transfer()?[0];
             if stat & adiv5::DP_STAT_CSYSPWRUPACK == 0 {
                 return Err(anyhow!("system power-up request failed"));

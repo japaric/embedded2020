@@ -13,3 +13,4 @@ anyhow = "1.0.26"
 arrayref = "0.3.6"
 hidapi = "1.1.1"
 log = "0.4.8"
+cm = { path = "../../shared/cm" }

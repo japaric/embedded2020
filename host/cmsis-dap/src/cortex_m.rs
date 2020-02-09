@@ -1,44 +1,102 @@
 //! Cortex-M specific operations
 
-use core::fmt;
-
 use anyhow::anyhow;
+use cm::{
+    dcb::{dcrsr, dhcsr, DCRDR, DCRSR, DHCSR},
+    scb::{aircr, AIRCR},
+};
 use log::info;
 
 use crate::adiv5;
 
 /// Cortex-M register that the DAP can read
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum Register {
+    /// R0
+    R0 = 0b00000,
+
+    /// R1
+    R1 = 0b00001,
+
+    /// R2
+    R2 = 0b00010,
+
+    /// R3
+    R3 = 0b00011,
+
+    /// R4
+    R4 = 0b00100,
+
+    /// R5
+    R5 = 0b00101,
+
+    /// R6
+    R6 = 0b00110,
+
+    /// R7
+    R7 = 0b00111,
+
+    /// R8
+    R8 = 0b01000,
+
+    /// R9
+    R9 = 0b01001,
+
+    /// R10
+    R10 = 0b01010,
+
+    /// R11
+    R11 = 0b01011,
+
+    /// R12
+    R12 = 0b01100,
+
     /// Stack Pointer
-    SP = 0b1101,
+    SP = 0b01101,
+
+    /// Link register
+    LR = 0b01110,
 
     /// Program Counter (AKA Debug Return Address)
-    PC = 0b1111,
+    PC = 0b01111,
+
+    /// Program Status Register
+    XPSR = 0b10000,
+
+    /// CONTROL - FAULTMASK - BASEPRI - PRIMASK
+    CFBP = 0b10100,
 }
 
 impl Register {
-    fn regsel(&self) -> u32 {
-        *self as u32
+    fn regsel(self) -> u8 {
+        self as u8
     }
 }
 
+/// Debug Key
+const DBGKEY: u16 = 0xA05F;
+
 impl crate::Dap {
-    /// Halts a Cortex-M target
-    pub fn cortex_m_halt(&mut self) -> Result<(), anyhow::Error> {
+    /// [Cortex-M] Halts a Cortex-M target
+    pub fn halt(&mut self) -> Result<(), anyhow::Error> {
         info!("halting the target ...");
 
-        self.cortex_m_set_debugen()?;
+        self.set_debugen()?;
 
-        let addr = DHCSR;
-        let val = self.memory_read_word(addr)?;
-        if val & DHCSR_C_HALT == 0 {
-            self.memory_write_word(addr, DHCSR_DBGKEY | DHCSR_C_HALT | DHCSR_C_DEBUGEN)?;
-            let val = self.memory_read_word(addr)?;
+        let addr = DHCSR::address() as usize as u32;
+        let dhcsr = dhcsr::R::from(self.memory_read_word(addr)?);
+        if dhcsr.C_HALT() == 0 {
+            let mut w = dhcsr::W::from(dhcsr);
+            w.DBGKEY(DBGKEY).C_HALT(1).C_DEBUGEN(1);
+            self.memory_write_word(addr, w.into())?;
+            let dhcsr = dhcsr::R::from(self.memory_read_word(addr)?);
 
-            if val & DHCSR_C_HALT == 0 {
-                return Err(anyhow!("failed to halt the target (DHCSR = {:#010x})", val));
+            if dhcsr.C_HALT() == 0 {
+                return Err(anyhow!(
+                    "failed to halt the target (DHCSR = {:#010x})",
+                    u32::from(dhcsr)
+                ));
             }
         }
 
@@ -47,34 +105,63 @@ impl crate::Dap {
         Ok(())
     }
 
-    /// Reads the specified target's core register
-    pub fn read_cortex_m_register(&mut self, reg: Register) -> Result<u32, anyhow::Error> {
+    /// Checks if the target is currently halted
+    pub fn is_halted(&mut self) -> Result<bool, anyhow::Error> {
+        Ok(if self.debugen != Some(false) {
+            false
+        } else {
+            dhcsr::R::from(
+                self.memory_read_word(DHCSR::address() as usize as u32)?,
+            )
+            .C_HALT()
+                != 0
+        })
+    }
+
+    /// [ARM Cortex-M] Reads the specified target's core register
+    pub fn read_core_register(
+        &mut self,
+        reg: Register,
+    ) -> Result<u32, anyhow::Error> {
+        const READ: u8 = 0;
+
         info!("reading Cortex-M register {:?} ... ", reg);
 
-        self.memory_write_word(DCRSR, DCRSR_REGWNR_READ | reg.regsel())?;
+        let mut w = dcrsr::W::zero();
+        w.REGWnR(READ).REGSEL(reg.regsel());
+        self.memory_write_word(DCRSR::address() as usize as u32, w.into())?;
 
-        while self.memory_read_word(DHCSR)? & DHCSR_S_REGRDY == 0 {
+        let dhcsr = dhcsr::R::from(
+            self.memory_read_word(DHCSR::address() as usize as u32)?,
+        );
+        while dhcsr.S_REGRDY() == 0 {
             self.brief_sleep();
         }
 
-        let word = self.memory_read_word(DCRDR)?;
+        let word = self.memory_read_word(DCRDR::address() as usize as u32)?;
 
         info!("{:?} -> {:#010x}", reg, word);
 
         Ok(word)
     }
 
-    /// Requests a system reset
-    pub fn cortex_m_sysresetreq(&mut self) -> Result<(), anyhow::Error> {
+    /// [ARM Cortex-M] Requests a system reset
+    pub fn sysresetreq(&mut self) -> Result<(), anyhow::Error> {
+        /// Vector Key
+        const VECTKEY: u16 = 0x05fa;
+
         info!("resetting the target with SYSRESETREQ ...");
 
-        self.cortex_m_set_debugen()?;
+        self.set_debugen()?;
 
-        let addr = AIRCR;
-        let val = self.memory_read_word(addr)?;
-        let ro_mask = (u32::from(u16::max_value()) << 16) | (1 << 15) | (0b111 << 8);
-        let new_val = (val & !ro_mask) | AIRCR_VECTKEY | AIRCR_SYSRESETREQ;
-        self.memory_write_word(addr, new_val)?;
+        let addr = AIRCR::address() as usize as u32;
+        let mut w =
+            aircr::W::from(aircr::R::from(self.memory_read_word(addr)?));
+        // let ro_mask =
+        // (u32::from(u16::max_value()) << 16) | (1 << 15) | (0b111 << 8);
+        w.VECTKEY(VECTKEY).SYSRESETREQ(1);
+        // let new_val = (val & !ro_mask) | AIRCR_VECTKEY | AIRCR_SYSRESETREQ;
+        self.memory_write_word(addr, w.into())?;
 
         // reset causes AHB_AP information to be lost; invalidate the cached state
         self.ap_bank = None;
@@ -84,40 +171,42 @@ impl crate::Dap {
         self.debugen = Some(false);
 
         // wait for system and debug power-up
-        let mut stat = self.read_adiv5_register(adiv5::Register::DP_STAT)?;
+        let mut stat = self.read_register(adiv5::Register::DP_STAT)?;
         while stat & adiv5::DP_STAT_CDBGPWRUPACK == 0 {
             self.brief_sleep();
-            stat = self.read_adiv5_register(adiv5::Register::DP_STAT)?;
+            stat = self.read_register(adiv5::Register::DP_STAT)?;
         }
 
         while stat & adiv5::DP_STAT_CSYSPWRUPACK == 0 {
             self.brief_sleep();
-            stat = self.read_adiv5_register(adiv5::Register::DP_STAT)?;
+            stat = self.read_register(adiv5::Register::DP_STAT)?;
         }
 
         info!("... target reset");
         Ok(())
     }
 
-    /// Enables halting debug (DHCSR.C_DEBUGEN <- 1)
+    /// [ARM Cortex-M] Enables halting debug (DHCSR.C_DEBUGEN <- 1)
     ///
     /// Modifying some Cortex-M registers requires halting debug to be enabled
-    fn cortex_m_set_debugen(&mut self) -> Result<(), anyhow::Error> {
+    fn set_debugen(&mut self) -> Result<(), anyhow::Error> {
         if self.debugen == Some(true) {
             return Ok(());
         }
 
-        let addr = DHCSR;
-        let val = self.memory_read_word(addr)?;
-        if val & DHCSR_C_DEBUGEN == 0 {
+        let addr = DHCSR::address() as usize as u32;
+        let dhcsr = dhcsr::R::from(self.memory_read_word(addr)?);
+        if dhcsr.C_DEBUGEN() == 0 {
             info!("enabling halting debug mode");
-            self.memory_write_word(addr, DHCSR_DBGKEY | DHCSR_C_DEBUGEN)?;
-            let val = self.memory_read_word(addr)?;
+            let mut w = dhcsr::W::from(dhcsr);
+            w.DBGKEY(DBGKEY).C_DEBUGEN(1);
+            self.memory_write_word(addr, w.into())?;
+            let dhcsr = dhcsr::R::from(self.memory_read_word(addr)?);
 
-            if val & DHCSR_C_DEBUGEN == 0 {
+            if dhcsr.C_DEBUGEN() == 0 {
                 return Err(anyhow!(
                     "failed to enable halting debug mode (DHCSR = {:#010x})",
-                    val
+                    u32::from(dhcsr)
                 ));
             }
         }
@@ -125,184 +214,5 @@ impl crate::Dap {
         self.debugen = Some(true);
 
         Ok(())
-    }
-}
-
-/* # MMIO Registers */
-
-/* ## CPUID */
-
-// section B3.2.3 of ARMv7-M TRM
-/// CPUID register
-pub const CPUID: u32 = 0xe000_ed00;
-
-/* ## DHCSR */
-
-/// Debug Halting Control and Status Register
-pub const DHCSR: u32 = 0xe000_edf0;
-
-/// Debug Key
-pub const DHCSR_DBGKEY: u32 = 0xA05F << 16;
-
-/// A handshake flag for transfers through the DCRDR
-pub const DHCSR_S_REGRDY: u32 = 1 << 16;
-
-/// Processor halt bit
-pub const DHCSR_C_HALT: u32 = 1 << 1;
-
-/// Halting debug enable bit
-pub const DHCSR_C_DEBUGEN: u32 = 1 << 0;
-
-/* ## DCRSR */
-
-/// Debug Core Register Selector Register
-pub const DCRSR: u32 = 0xe000_edf4;
-
-/// Access type for the transfer: Read
-pub const DCRSR_REGWNR_READ: u32 = 0 << 16;
-
-/// Access type for the transfer: Write
-pub const DCRSR_REGWNR_WRITE: u32 = 1 << 16;
-
-/* ## DCRDR */
-
-/// Debug Core Register Data Register
-pub const DCRDR: u32 = 0xe000_edf8;
-
-/* ## AIRCR */
-
-/// Application Interrupt and Reset Control Register
-pub const AIRCR: u32 = 0xe000_ed0c;
-
-/// Vector Key
-pub const AIRCR_VECTKEY: u32 = 0x05fa << 16;
-
-/// System Reset Request
-pub const AIRCR_SYSRESETREQ: u32 = 1 << 2;
-
-/// CPUID register
-pub struct Cpuid {
-    implementer: u8,
-    variant: u8,
-    constant: u8,
-    partno: u16,
-    revision: u8,
-}
-
-impl From<u32> for Cpuid {
-    fn from(word: u32) -> Self {
-        let implementer = (word >> 24) as u8;
-        let variant = ((word >> 20) & ((1 << 4) - 1)) as u8;
-        let constant = ((word >> 16) & ((1 << 4) - 1)) as u8;
-        let partno = ((word >> 4) & ((1 << 12) - 1)) as u16;
-        let revision = (word & ((1 << 4) - 1)) as u8;
-
-        Self {
-            implementer,
-            constant,
-            variant,
-            partno,
-            revision,
-        }
-    }
-}
-
-impl Cpuid {
-    /// Returns the bits of the CPUID
-    pub fn bits(&self) -> u32 {
-        u32::from(self.implementer) << 24
-            | u32::from(self.variant) << 20
-            | u32::from(self.constant) << 16
-            | u32::from(self.partno) << 4
-            | u32::from(self.revision)
-    }
-
-    /// Checks if the implementer is set to ARM
-    pub fn implementer_is_arm(&self) -> bool {
-        const CPUID_IMPLEMENTER_ARM: u8 = 0x41;
-
-        self.implementer == CPUID_IMPLEMENTER_ARM
-    }
-
-    /// Returns the part number field
-    pub fn partno(&self) -> Partno {
-        const CPUID_CONSTANT_ARMV6M: u8 = 0xc;
-        const CPUID_CONSTANT_ARMV7M: u8 = 0xf;
-
-        if self.implementer_is_arm() {
-            if self.constant == CPUID_CONSTANT_ARMV6M {
-                // or v8-M baseline
-                if self.partno == 0xc20 {
-                    Partno::CortexM0
-                } else if self.partno == 0xc60 {
-                    Partno::CortexM0Plus
-                } else if self.partno == 0xd20 {
-                    Partno::CortexM23
-                } else {
-                    Partno::Unknown
-                }
-            } else if self.constant == CPUID_CONSTANT_ARMV7M {
-                // or v8-M mainline
-                if self.partno == 0xc23 {
-                    Partno::CortexM3
-                } else if self.partno == 0xC24 {
-                    Partno::CortexM4
-                } else if self.partno == 0xc27 {
-                    Partno::CortexM7
-                } else if self.partno == 0xd21 {
-                    Partno::CortexM33
-                } else {
-                    Partno::Unknown
-                }
-            } else {
-                Partno::Unknown
-            }
-        } else {
-            Partno::Unknown
-        }
-    }
-}
-
-/// Part number
-pub enum Partno {
-    /// ARM Cortex-M0
-    CortexM0,
-
-    /// ARM Cortex-M0+
-    CortexM0Plus,
-
-    /// ARM Cortex-M3
-    CortexM3,
-
-    /// ARM Cortex-M4
-    CortexM4,
-
-    /// ARM Cortex-M7
-    CortexM7,
-
-    /// ARM Cortex-M23
-    CortexM23,
-
-    /// ARM Cortex-M33
-    CortexM33,
-
-    /// Unknown part
-    Unknown,
-}
-
-impl fmt::Display for Partno {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = match *self {
-            Partno::CortexM0 => "ARM Cortex-M0",
-            Partno::CortexM0Plus => "ARM Cortex-M0+",
-            Partno::CortexM3 => "ARM Cortex-M3",
-            Partno::CortexM4 => "ARM Cortex-M4",
-            Partno::CortexM7 => "ARM Cortex-M7",
-            Partno::CortexM23 => "ARM Cortex-M23",
-            Partno::CortexM33 => "ARM Cortex-M33",
-            Partno::Unknown => "unknown part",
-        };
-
-        f.write_str(s)
     }
 }

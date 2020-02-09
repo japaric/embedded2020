@@ -1,0 +1,13 @@
+[package]
+authors = ["Jorge Aparicio <jorge@japaric.io>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+name = "hal"
+publish = false
+version = "0.0.0"
+
+[dependencies]
+cm = { path = "../../shared/cm" }
+pac = { path = "../pac", features = ["udebug"] }
+semidap = { path = "../semidap" }
+ufmt = "0.1.0"

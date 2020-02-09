@@ -55,17 +55,17 @@ impl Register {
         }
     }
 
-    pub(crate) fn ap_bank(&self) -> Option<ApBank> {
-        match *self {
+    pub(crate) fn ap_bank(self) -> Option<ApBank> {
+        match self {
             Register::DP_DPIDR
             | Register::DP_CTRL
             | Register::DP_STAT
             | Register::DP_SELECT
             | Register::DP_RDBUFF => None,
 
-            Register::AHB_AP_CSW | Register::AHB_AP_TAR | Register::AHB_AP_DRW => {
-                Some(ApBank::AHB_AP(0))
-            }
+            Register::AHB_AP_CSW
+            | Register::AHB_AP_TAR
+            | Register::AHB_AP_DRW => Some(ApBank::AHB_AP(0)),
 
             Register::AHB_AP_BD0
             | Register::AHB_AP_BD1
@@ -83,25 +83,32 @@ pub(crate) enum ApBank {
 }
 
 impl crate::Dap {
-    /// Reads the specified ADIv5 `register`
+    /// [ADIv5] Reads the specified ADIv5 `register`
     ///
     /// # Panics
     ///
     /// This method panics if there are outstanding DAP transfer requests -- `execute_dap_transfer`
     /// must be called before calling this method
-    pub fn read_adiv5_register(&mut self, reg: Register) -> Result<u32, anyhow::Error> {
+    pub fn read_register(
+        &mut self,
+        reg: Register,
+    ) -> Result<u32, anyhow::Error> {
         assert_eq!(self.total_requests, 0, "outstanding DAP transfer requests");
         self.push_dap_transfer_request(reg, dap::Request::Read);
         Ok(self.execute_dap_transfer()?[0])
     }
 
-    /// Writes the given `value` to the specified ADIv5 `register`
+    /// [ADIv5] Writes the given `value` to the specified ADIv5 `register`
     ///
     /// # Panics
     ///
     /// This method panics if there are outstanding DAP transfer requests -- `execute_dap_transfer`
     /// must be called before calling this method
-    pub fn write_adiv5_register(&mut self, reg: Register, val: u32) -> Result<(), anyhow::Error> {
+    pub fn write_register(
+        &mut self,
+        reg: Register,
+        val: u32,
+    ) -> Result<(), anyhow::Error> {
         assert_eq!(self.total_requests, 0, "outstanding DAP transfer requests");
         self.push_dap_transfer_request(reg, dap::Request::Write(val));
         self.execute_dap_transfer().map(drop)

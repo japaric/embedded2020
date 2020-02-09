@@ -1,0 +1,18 @@
+[package]
+authors = ["Jorge Aparicio <jorge@japaric.io>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+name = "cm"
+publish = false
+version = "0.0.0"
+
+[dependencies.ufmt]
+optional = true
+version = "0.1.0"
+
+[dependencies.regen-ufmt]
+optional = true
+path = "../regen-ufmt"
+
+[features]
+udebug = ["regen-ufmt", "ufmt"]

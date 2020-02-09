@@ -1,6 +1,6 @@
 //! CMSIS-DAP operations
 
-use core::fmt;
+use core::{cmp::Ordering, fmt};
 
 use anyhow::anyhow;
 use arrayref::array_ref;
@@ -43,7 +43,7 @@ impl PartialEq<Command> for u8 {
 /* ## DAP_Info */
 
 const DAP_INFO_CAPABILITIES: u8 = 0xf0;
-pub(crate) const CAPABILITIES_SWD: u8 = 1 << 0;
+pub(crate) const CAPABILITIES_SWD: u8 = 1;
 
 // const DAP_INFO_PACKET_COUNT: u8 = 0xfe;
 
@@ -150,7 +150,8 @@ impl crate::Dap {
 /// SWJ sequence to switch from JTAG mode to SWD mode
 pub static JTAG_TO_SWD_SWJ_SEQUENCE: &[u8] = &[
     // at least 50 cycles of SWDIO/TMS high
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // 16-bit JTAG-to-SWD select sequence
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, // 16-bit JTAG-to-SWD select sequence
     0x9e, 0xe7, //
     // at least 50 cycles of SWDIO/TMS high
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -166,14 +167,10 @@ impl crate::Dap {
         let count = data
             .len()
             .checked_mul(8)
-            .and_then(|bits| {
-                if bits > 256 {
-                    None
-                } else if bits == 256 {
-                    Some(0)
-                } else {
-                    Some(bits as u8)
-                }
+            .and_then(|bits| match bits.cmp(&256) {
+                Ordering::Equal => Some(0),
+                Ordering::Greater => None,
+                Ordering::Less => Some(bits as u8),
             })
             .expect("sequence is longer than 256 bits");
         debug!("DAP_SWJ_Sequence <{} bits>", count);
@@ -240,24 +237,24 @@ impl fmt::Debug for Request {
 }
 
 impl adiv5::Register {
-    fn request(&self) -> u8 {
+    fn request(self) -> u8 {
         use adiv5::Register::*;
 
         const REQUEST_DP: u8 = 0;
         const REQUEST_AP: u8 = 1;
 
-        match *self {
-            DP_DPIDR => 0x0 | REQUEST_DP,
+        match self {
+            DP_DPIDR => REQUEST_DP,
             DP_CTRL => 0x4 | REQUEST_DP,
             DP_STAT => 0x4 | REQUEST_DP,
             DP_SELECT => 0x8 | REQUEST_DP,
             DP_RDBUFF => 0xc | REQUEST_DP,
 
-            AHB_AP_CSW => 0x0 | REQUEST_AP,
+            AHB_AP_CSW => REQUEST_AP,
             AHB_AP_TAR => 0x4 | REQUEST_AP,
             AHB_AP_DRW => 0xc | REQUEST_AP,
 
-            AHB_AP_BD0 => 0x0 | REQUEST_AP,
+            AHB_AP_BD0 => REQUEST_AP,
             AHB_AP_BD1 => 0x4 | REQUEST_AP,
             AHB_AP_BD2 => 0x8 | REQUEST_AP,
             AHB_AP_BD3 => 0xc | REQUEST_AP,
@@ -267,7 +264,11 @@ impl adiv5::Register {
 
 impl crate::Dap {
     /// Pushes a DAP transfer request into the internal buffer
-    pub fn push_dap_transfer_request(&mut self, reg: adiv5::Register, req: Request) {
+    pub fn push_dap_transfer_request(
+        &mut self,
+        reg: adiv5::Register,
+        req: Request,
+    ) {
         const CMD: Command = Command::DAP_Transfer;
 
         // change bank, if required
@@ -279,7 +280,8 @@ impl crate::Dap {
                             adiv5::Register::DP_SELECT,
                             Request::Write(
                                 adiv5::DP_SELECT_APSEL_AHB_AP
-                                    | (u32::from(n) << adiv5::DP_SELECT_APBANKSEL_OFFSET),
+                                    | (u32::from(n)
+                                        << adiv5::DP_SELECT_APBANKSEL_OFFSET),
                             ),
                         );
 
@@ -341,7 +343,10 @@ impl crate::Dap {
 
         let resp = self.hid_read(RHS + 4 * u16::from(read_requests))?;
 
-        if resp[0] != CMD || resp[1] != total_requests || resp[2] != TRANSFER_ACK_OK {
+        if resp[0] != CMD
+            || resp[1] != total_requests
+            || resp[2] != TRANSFER_ACK_OK
+        {
             return Err(anyhow!("`{:?}` failed (resp = {:?})", CMD, resp));
         }
 
@@ -380,7 +385,10 @@ impl crate::Dap {
 
         let resp = self.hid_read(RHS + count * u32::BYTES)?;
 
-        if resp[0] != CMD || resp[1..3] != count.to_le_bytes()[..] || resp[3] != TRANSFER_ACK_OK {
+        if resp[0] != CMD
+            || resp[1..3] != count.to_le_bytes()[..]
+            || resp[3] != TRANSFER_ACK_OK
+        {
             return Err(anyhow!("`{:?}` failed", CMD));
         }
 
@@ -416,7 +424,10 @@ impl crate::Dap {
 
         let resp = self.hid_read(RHS)?;
 
-        if resp[0] != CMD || resp[1..3] != count.to_le_bytes()[..] || resp[3] != TRANSFER_ACK_OK {
+        if resp[0] != CMD
+            || resp[1..3] != count.to_le_bytes()[..]
+            || resp[3] != TRANSFER_ACK_OK
+        {
             return Err(anyhow!("`{:?}` failed", CMD));
         }
 

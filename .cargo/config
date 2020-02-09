@@ -1,0 +1,9 @@
+[alias]
+bb = "build --bin"
+br = "build --release"
+brb = "build --release --bin"
+rb = "run --bin"
+re = "run --example"
+rr = "run --release"
+rrb = "run --release --bin"
+rre = "run --release --example"

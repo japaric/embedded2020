@@ -1,8 +1,9 @@
-[target.thumbv7em-none-eabihf]
-runner = "dap-ll -v 0d28 -p 0204"
+[target.thumbv7em-none-eabi]
+runner = "semidap -v 0d28 -p 0204"
 rustflags = [
   "-C", "link-arg=-Tlink.x",
+  "-C", "linker=flip-lld",
 ]
 
 [build]
-target = "thumbv7em-none-eabihf" # Cortex-M4F
+target = "thumbv7em-none-eabi" # Cortex-M4F (FPU disabled)

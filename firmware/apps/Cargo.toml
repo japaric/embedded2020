@@ -1,0 +1,13 @@
+[package]
+authors = ["Jorge Aparicio <jorge@japaric.io>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+name = "apps"
+publish = false
+version = "0.0.0"
+
+[dependencies]
+hal = { path = "../hal" }
+panic-abort = { path = "../panic-abort" }
+semidap = { path = "../semidap" }
+ufmt = "0.1.0"

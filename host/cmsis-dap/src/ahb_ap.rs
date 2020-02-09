@@ -22,7 +22,10 @@ const CSW_ADDRINC_BOUNDARY: u32 = 0x400;
 
 impl crate::Dap {
     /// Reads a single word from the target's memory using the AHB-AP (Access Port)
-    pub fn memory_read_word(&mut self, addr: u32) -> Result<u32, anyhow::Error> {
+    pub fn memory_read_word(
+        &mut self,
+        addr: u32,
+    ) -> Result<u32, anyhow::Error> {
         assert_eq!(addr % 4, 0, "address is not 4-byte aligned");
 
         info!("MRW {:#010x} ...", addr);
@@ -46,7 +49,10 @@ impl crate::Dap {
         }
 
         // use AP_BD* registers
-        self.push_dap_transfer_request(adiv5::Register::banked_data(addr), dap::Request::Read);
+        self.push_dap_transfer_request(
+            adiv5::Register::banked_data(addr),
+            dap::Request::Read,
+        );
 
         let word = self.execute_dap_transfer()?[0];
 
@@ -56,7 +62,11 @@ impl crate::Dap {
     }
 
     /// Writes a single word into the target's memory using the AHB-AP (Access Port)
-    pub fn memory_write_word(&mut self, addr: u32, val: u32) -> Result<(), anyhow::Error> {
+    pub fn memory_write_word(
+        &mut self,
+        addr: u32,
+        val: u32,
+    ) -> Result<(), anyhow::Error> {
         assert_eq!(addr % 4, 0, "address is not 4-byte aligned");
 
         info!("MWW {:#010x} <- {:#010x}", addr, val);
@@ -90,7 +100,11 @@ impl crate::Dap {
 
     /// Reads `n` bytes, half-words or words from the target's memory starting at the specified
     /// `address`
-    pub fn memory_read<T>(&mut self, addr: u32, count: u16) -> Result<Vec<T>, anyhow::Error>
+    pub fn memory_read<T>(
+        &mut self,
+        addr: u32,
+        count: u32,
+    ) -> Result<Vec<T>, anyhow::Error>
     where
         T: sealed::Data,
     {
@@ -112,24 +126,31 @@ impl crate::Dap {
 
         self.push_dap_transfer_request(
             adiv5::Register::AHB_AP_CSW,
-            dap::Request::Write(CSW_MUST_PRESERVE | CSW_ADDRINC_PACKED | T::CSW_SIZE),
+            dap::Request::Write(
+                CSW_MUST_PRESERVE | CSW_ADDRINC_PACKED | T::CSW_SIZE,
+            ),
         );
 
         let mut memory = vec![];
 
-        let mut total_bytes = u32::from(count) * u32::from(T::BYTES);
+        let mut total_bytes = count * u32::from(T::BYTES);
         let mut offset = addr % CSW_ADDRINC_BOUNDARY;
         if offset + total_bytes > CSW_ADDRINC_BOUNDARY {
             // AHB_AP_TAR will need to be updated mid-way to avoid auto-increment wrap-around
             let mut addr = addr;
 
             while total_bytes != 0 {
-                let bytes = cmp::min(total_bytes, CSW_ADDRINC_BOUNDARY - offset) as u16;
+                let bytes =
+                    cmp::min(total_bytes, CSW_ADDRINC_BOUNDARY - offset);
                 offset = 0;
-                self.transfer_block_read_csw(addr, bytes / T::BYTES, &mut memory)?;
+                self.transfer_block_read_csw(
+                    addr,
+                    bytes / u32::from(T::BYTES),
+                    &mut memory,
+                )?;
 
-                addr += u32::from(bytes);
-                total_bytes -= u32::from(bytes);
+                addr += bytes;
+                total_bytes -= bytes;
             }
         } else {
             self.transfer_block_read_csw(addr, count, &mut memory)?;
@@ -141,7 +162,7 @@ impl crate::Dap {
     fn transfer_block_read_csw<T>(
         &mut self,
         mut addr: u32,
-        mut total_count: u16,
+        mut total_count: u32,
         memory: &mut Vec<T>,
     ) -> Result<(), anyhow::Error>
     where
@@ -151,12 +172,15 @@ impl crate::Dap {
         const RHS: u16 = 5;
 
         assert!(
-            addr % CSW_ADDRINC_BOUNDARY + u32::from(total_count) * u32::from(T::BYTES)
+            addr % CSW_ADDRINC_BOUNDARY + total_count * u32::from(T::BYTES)
                 <= CSW_ADDRINC_BOUNDARY
         );
 
         if self.tar.map(|tar| tar != addr).unwrap_or(true) {
-            self.push_dap_transfer_request(adiv5::Register::AHB_AP_TAR, dap::Request::Write(addr));
+            self.push_dap_transfer_request(
+                adiv5::Register::AHB_AP_TAR,
+                dap::Request::Write(addr),
+            );
             self.tar = Some(addr);
         }
         self.execute_dap_transfer()?;
@@ -165,16 +189,20 @@ impl crate::Dap {
             util::round_down(self.packet_size - RHS, u32::BYTES) / T::BYTES;
 
         while total_count != 0 {
-            let count = cmp::min(total_count, max_count_per_transfer);
+            // NOTE(as u16) `max_count_per_transfer` has type `u16`
+            let count =
+                cmp::min(total_count, u32::from(max_count_per_transfer)) as u16;
             let payload_bytes = util::round_up(count * T::BYTES, u32::BYTES);
 
-            let data =
-                self.transfer_block_read(adiv5::Register::AHB_AP_DRW, payload_bytes / u32::BYTES)?;
+            let data = self.transfer_block_read(
+                adiv5::Register::AHB_AP_DRW,
+                payload_bytes / u32::BYTES,
+            )?;
 
             T::push(memory, data, addr % 4, count);
 
-            total_count -= count;
-            addr -= u32::from(payload_bytes);
+            total_count -= u32::from(count);
+            addr += u32::from(payload_bytes);
         }
 
         if addr % CSW_ADDRINC_BOUNDARY == 0 {
@@ -187,7 +215,11 @@ impl crate::Dap {
     }
 
     /// Writes `bytes` into the target's memory starting at the specified `address`
-    pub fn memory_write(&mut self, addr: u32, mut bytes: &[u8]) -> Result<(), anyhow::Error> {
+    pub fn memory_write(
+        &mut self,
+        addr: u32,
+        mut bytes: &[u8],
+    ) -> Result<(), anyhow::Error> {
         assert_eq!(
             addr % u32::from(u32::BYTES),
             0,
@@ -212,7 +244,9 @@ impl crate::Dap {
 
         self.push_dap_transfer_request(
             adiv5::Register::AHB_AP_CSW,
-            dap::Request::Write(CSW_MUST_PRESERVE | CSW_ADDRINC_PACKED | u8::CSW_SIZE),
+            dap::Request::Write(
+                CSW_MUST_PRESERVE | CSW_ADDRINC_PACKED | u8::CSW_SIZE,
+            ),
         );
 
         let mut total_bytes = bytes.len();
@@ -222,7 +256,10 @@ impl crate::Dap {
 
             while total_bytes != 0 {
                 // AHB_AP_TAR will need to be updated mid-way to avoid auto-increment wrap-around
-                let n = cmp::min(total_bytes, (CSW_ADDRINC_BOUNDARY - offset) as usize);
+                let n = cmp::min(
+                    total_bytes,
+                    (CSW_ADDRINC_BOUNDARY - offset) as usize,
+                );
                 offset = 0;
                 self.transfer_block_write_csw(addr, &bytes[..n])?;
 
@@ -246,7 +283,8 @@ impl crate::Dap {
         const RHS: u16 = 5;
 
         assert!(
-            (addr % CSW_ADDRINC_BOUNDARY) as usize + bytes.len() <= CSW_ADDRINC_BOUNDARY as usize
+            (addr % CSW_ADDRINC_BOUNDARY) as usize + bytes.len()
+                <= CSW_ADDRINC_BOUNDARY as usize
         );
         assert_eq!(
             bytes.len() % usize::from(u32::BYTES),
@@ -257,25 +295,34 @@ impl crate::Dap {
 
         let words = bytes
             .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("UNREACHABLE")))
+            .map(|chunk| {
+                u32::from_le_bytes(chunk.try_into().expect("UNREACHABLE"))
+            })
             .collect::<Vec<_>>();
         let mut words = &*words;
 
         if self.tar.map(|tar| tar != addr).unwrap_or(true) {
-            self.push_dap_transfer_request(adiv5::Register::AHB_AP_TAR, dap::Request::Write(addr));
+            self.push_dap_transfer_request(
+                adiv5::Register::AHB_AP_TAR,
+                dap::Request::Write(addr),
+            );
             self.tar = Some(addr);
         }
         self.execute_dap_transfer()?;
 
-        let max_count_per_transfer =
-            usize::from(util::round_down(self.packet_size - RHS, u32::BYTES) / u32::BYTES);
+        let max_count_per_transfer = usize::from(
+            util::round_down(self.packet_size - RHS, u32::BYTES) / u32::BYTES,
+        );
 
         let mut total_count = words.len();
         while total_count != 0 {
             let count = cmp::min(total_count, max_count_per_transfer);
             let n = count * usize::from(u32::BYTES);
 
-            self.transfer_block_write(adiv5::Register::AHB_AP_DRW, &words[..count])?;
+            self.transfer_block_write(
+                adiv5::Register::AHB_AP_DRW,
+                &words[..count],
+            )?;
 
             total_count -= count;
             addr += n as u32;
@@ -295,7 +342,7 @@ impl crate::Dap {
 
 impl sealed::Data for u8 {
     const BYTES: u16 = 1;
-    const CSW_SIZE: u32 = 0b00 << 0;
+    const CSW_SIZE: u32 = 0b00;
 
     fn acronym() -> &'static str {
         "B"
@@ -317,7 +364,7 @@ impl sealed::Data for u8 {
 
 impl sealed::Data for u16 {
     const BYTES: u16 = 2;
-    const CSW_SIZE: u32 = 0b01 << 0;
+    const CSW_SIZE: u32 = 0b01;
 
     fn acronym() -> &'static str {
         "H"
@@ -332,7 +379,9 @@ impl sealed::Data for u16 {
 
             let len = cmp::min(count * u16::BYTES, u32::BYTES);
 
-            for chunk in chunk[..usize::from(len)].chunks(usize::from(u16::BYTES)) {
+            for chunk in
+                chunk[..usize::from(len)].chunks(usize::from(u16::BYTES))
+            {
                 memory.push(Self::from_le_bytes(*array_ref!(
                     chunk,
                     0,
@@ -347,7 +396,7 @@ impl sealed::Data for u16 {
 
 impl sealed::Data for u32 {
     const BYTES: u16 = 4;
-    const CSW_SIZE: u32 = 0b10 << 0;
+    const CSW_SIZE: u32 = 0b10;
 
     fn acronym() -> &'static str {
         "W"

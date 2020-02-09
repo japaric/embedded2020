@@ -1,5 +1,7 @@
 [workspace]
 members = [
   "cmsis-dap",
-  "dap-ll",
+  "regen",
+  "semidap",
+  "semidap-macros",
 ]

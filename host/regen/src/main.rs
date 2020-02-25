@@ -29,9 +29,29 @@ const AUDITED: &[&str] = &["CLOCK", "P0", "RTC0"];
 fn gen_nrf52(lib: &Path) -> Result<(), anyhow::Error> {
     let xml = fs::read_to_string("nrf52.svd")?;
     let dev = svd_parser::parse(&xml)?;
-    let dev = translate::svd::device(&dev, AUDITED);
+    let mut dev = translate::svd::device(&dev, AUDITED);
+    audit_nrf52(&mut dev);
     gen(dev, lib)?;
     check_lib(lib)
+}
+
+fn audit_nrf52(dev: &mut ir::Device<'_>) {
+    for periph in &mut dev.peripherals {
+        match &*periph.name {
+            "RTC0" => {
+                for reg in &mut periph.registers {
+                    match &*reg.name {
+                        // enabling interrupts can break critical sections
+                        "INTENSET" => {
+                            reg.access.make_write_unsafe();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn gen_cm(lib: &Path) -> Result<(), anyhow::Error> {

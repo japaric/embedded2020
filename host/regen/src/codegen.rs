@@ -180,16 +180,7 @@ fn register(register: &Register<'_>) -> TokenStream2 {
                 let field_name = format_ident!("{}", *field.name);
                 let offset = util::unsuffixed(field.offset);
                 let mask = util::hex(field.mask());
-                let doc = field
-                    .description
-                    .as_ref()
-                    .map(|s| Cow::from(&**s))
-                    .unwrap_or_else(|| {
-                        Cow::from(format!(
-                            "Returns the contents of the bitfield {}",
-                            field.name
-                        ))
-                    });
+                let doc = util::field_docs(&field);
 
                 let fname = &field.name;
                 let adapter = if field.width < 4 {
@@ -287,16 +278,7 @@ fn register(register: &Register<'_>) -> TokenStream2 {
                 let field_name = format_ident!("{}", &*field.name);
                 let offset = util::unsuffixed(field.offset);
                 let mask = util::hex(field.mask());
-                let doc = field
-                    .description
-                    .as_ref()
-                    .map(|s| Cow::from(&**s))
-                    .unwrap_or_else(|| {
-                        Cow::from(format!(
-                            "Sets the contents of the bitfield {} to `val`",
-                            field.name
-                        ))
-                    });
+                let doc = util::field_docs(&field);
 
                 quote!(
                     #[doc = #doc]

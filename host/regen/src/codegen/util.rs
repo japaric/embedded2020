@@ -4,7 +4,7 @@ use syn::{Ident, LitInt};
 
 use crate::{
     fmt::Hex,
-    ir::{Register, Width},
+    ir::{Bitfield, Register, Width},
 };
 
 pub fn ident(s: &str) -> Ident {
@@ -57,4 +57,17 @@ pub fn width2ty(width: Width) -> TokenStream2 {
         Width::U32 => quote!(u32),
         Width::U64 => quote!(u64),
     }
+}
+
+pub fn field_docs(field: &Bitfield<'_>) -> String {
+    let mut doc = if field.width == 1 {
+        format!("(Bit {})", field.offset)
+    } else {
+        format!("(Bits {}..={})", field.offset, field.offset + field.width)
+    };
+    if let Some(desc) = field.description.as_ref() {
+        doc.push(' ');
+        doc.push_str(desc);
+    }
+    doc
 }

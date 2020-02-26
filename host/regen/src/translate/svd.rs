@@ -31,31 +31,58 @@ pub fn peripheral<'a>(
 ) -> ir::Peripheral<'a> {
     assert!(p.derived_from.is_none());
 
+    let mut ir_regs = vec![];
+
+    for cluster in regs {
+        match cluster {
+            svd::RegisterCluster::Register(r) => match r {
+                svd::Register::Single(ri) => {
+                    ir_regs.push(translate::register(ri, None, &[defaults]));
+                }
+                // TODO implement
+                svd::Register::Array(..) => {}
+            },
+            svd::RegisterCluster::Cluster(cluster) => match cluster {
+                svd::Cluster::Single(info) => {
+                    for child in &info.children {
+                        match child {
+                            svd::RegisterCluster::Register(ri) => {
+                                ir_regs.push(translate::register(
+                                    ri,
+                                    Some(info),
+                                    &[
+                                        defaults,
+                                        &info.default_register_properties,
+                                    ],
+                                ));
+                            }
+
+                            svd::RegisterCluster::Cluster(..) => {
+                                unimplemented!()
+                            }
+                        }
+                    }
+                }
+
+                svd::Cluster::Array(..) => unimplemented!(),
+            },
+        }
+    }
+
     ir::Peripheral {
         name: p.name.as_str().into(),
         description: p.description.as_ref().map(|s| s.into()),
         instances: ir::Instances::Single {
             base_address: u64::from(p.base_address),
         },
-        registers: regs
-            .iter()
-            .filter_map(|cluster| match cluster {
-                svd::RegisterCluster::Register(r) => match r {
-                    svd::Register::Single(ri) => {
-                        Some(translate::register(ri, defaults))
-                    }
-                    // TODO implement
-                    svd::Register::Array(..) => None,
-                },
-                svd::RegisterCluster::Cluster(..) => unimplemented!(),
-            })
-            .collect(),
+        registers: ir_regs,
     }
 }
 
 pub fn register<'a>(
     r: &'a svd::RegisterInfo,
-    defaults: &svd::RegisterProperties,
+    cluster: Option<&svd::ClusterInfo>,
+    defaults: &[&svd::RegisterProperties],
 ) -> ir::Register<'a> {
     let (r_fields, w_fields) = r
         .fields
@@ -63,20 +90,33 @@ pub fn register<'a>(
         .map(|f| translate::fields(f, r))
         .unwrap_or((vec![], vec![]));
 
+    let (name, offset) = if let Some(cluster) = cluster {
+        (
+            format!("{}_{}", cluster.name, r.name).into(),
+            cluster.address_offset + r.address_offset,
+        )
+    } else {
+        (r.name.as_str().into(), r.address_offset)
+    };
+
     ir::Register {
         access: r
             .access
-            .or(defaults.access)
+            .or_else(|| {
+                defaults.iter().filter_map(|default| default.access).next()
+            })
             .map(translate::access)
             .expect("unimplemented"),
         description: r.description.as_ref().map(|s| s.as_str().into()),
-        name: r.name.as_str().into(),
+        name,
         r_fields,
         w_fields,
-        offset: u64::from(r.address_offset),
+        offset: u64::from(offset),
         width: r
             .size
-            .or(defaults.size)
+            .or_else(|| {
+                defaults.iter().filter_map(|default| default.size).next()
+            })
             .map(translate::register_size)
             .expect("unimplemented"),
     }

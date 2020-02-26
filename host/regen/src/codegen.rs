@@ -208,6 +208,15 @@ fn register(register: &Register<'_>) -> TokenStream2 {
 
         if !methods.is_empty() {
             let rname = &register.name;
+            let highest_bit = register
+                .r_fields
+                .iter()
+                .map(|f| f.offset + f.width)
+                .max()
+                .expect("unreachable");
+            // non-reserved width
+            let nrty = util::bitwidth2ty(highest_bit);
+
             mod_items.push(quote!(
                 /// View into the readable bitfields
                 #[derive(Clone, Copy)]
@@ -229,6 +238,11 @@ fn register(register: &Register<'_>) -> TokenStream2 {
 
                 impl R {
                     #(#methods)*
+
+                    /// Returns the non-reserved part of the register
+                    pub fn bits(self) -> #nrty {
+                        self.inner as _
+                    }
                 }
 
                 #[cfg(feature = "udebug")]

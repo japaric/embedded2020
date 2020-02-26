@@ -49,6 +49,36 @@ fn audit_nrf52(dev: &mut ir::Device<'_>) {
                     }
                 }
             }
+
+            // Fix bitfield widths to match the OPS
+            "TWIM0" => {
+                for reg in &mut periph.registers {
+                    match &*reg.name {
+                        "RXD_AMOUNT" | "TXD_AMOUNT" => {
+                            for field in
+                                reg.r_fields.iter_mut().chain(&mut reg.w_fields)
+                            {
+                                if field.name == "AMOUNT" {
+                                    field.width = 8;
+                                }
+                            }
+                        }
+
+                        "RXD_MAXCNT" | "TXD_MAXCNT" => {
+                            for field in
+                                reg.r_fields.iter_mut().chain(&mut reg.w_fields)
+                            {
+                                if field.name == "MAXCNT" {
+                                    field.width = 8;
+                                }
+                            }
+                        }
+
+                        _ => {}
+                    }
+                }
+            }
+
             _ => {}
         }
     }

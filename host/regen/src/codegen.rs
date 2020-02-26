@@ -326,6 +326,12 @@ fn register(register: &Register<'_>) -> TokenStream2 {
                     f(&mut w);
                     #safe { Self::address().write_volatile(w.into()) }
                 }
+
+                /// Writes zeros to the register
+                #[inline(always)]
+                pub #unsafety fn zero(&self) {
+                    #safe { Self::address().write_volatile(0) }
+                }
             ));
         } else {
             rmethods.push(quote!(

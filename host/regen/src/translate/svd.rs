@@ -39,8 +39,29 @@ pub fn peripheral<'a>(
                 svd::Register::Single(ri) => {
                     ir_regs.push(translate::register(ri, None, &[defaults]));
                 }
-                // TODO implement
-                svd::Register::Array(..) => {}
+
+                svd::Register::Array(ri, dim) => {
+                    assert!(dim.dim_index.is_none(), "unimplemented");
+
+                    assert!(ri.name.contains("[%s]"), "unimplemented");
+                    let template = &ri.name;
+                    let offset = ri.address_offset;
+
+                    for i in 0..dim.dim {
+                        // FIXME too lazy to do ownership correctly right now
+                        let mut ri: &'static mut _ =
+                            Box::leak(Box::new(ri.clone()));
+
+                        ri.name = template.replace("[%s]", &i.to_string());
+                        ri.address_offset = offset + i * dim.dim_increment;
+
+                        ir_regs.push(translate::register(
+                            ri,
+                            None,
+                            &[defaults],
+                        ));
+                    }
+                }
             },
             svd::RegisterCluster::Cluster(cluster) => match cluster {
                 svd::Cluster::Single(info) => {

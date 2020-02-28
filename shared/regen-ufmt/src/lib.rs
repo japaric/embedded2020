@@ -163,3 +163,20 @@ impl ufmt::uDebug for Hex7 {
         }
     }
 }
+
+pub struct Hex8(pub u32);
+
+impl ufmt::uDebug for Hex8 {
+    fn fmt<W>(&self, f: &mut ufmt::Formatter<'_, W>) -> Result<(), W::Error>
+    where
+        W: ufmt::uWrite + ?Sized,
+    {
+        let mut buf =
+            [b'0', b'x', b'0', b'0', b'0', b'0', b'_', b'0', b'0', b'0', b'0'];
+        unsafe {
+            hex(self.0 as u16, &mut buf[6..]);
+            hex((self.0 >> 16) as u16, &mut buf[2..6]);
+            f.write_str(str::from_utf8_unchecked(&buf))
+        }
+    }
+}

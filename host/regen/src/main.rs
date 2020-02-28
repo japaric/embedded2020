@@ -65,6 +65,9 @@ fn audit_nrf52(dev: &mut ir::Device<'_>) {
                         }
 
                         "RXD_MAXCNT" | "TXD_MAXCNT" => {
+                            // DMA related
+                            reg.access.make_write_unsafe();
+
                             for field in
                                 reg.r_fields.iter_mut().chain(&mut reg.w_fields)
                             {
@@ -72,6 +75,11 @@ fn audit_nrf52(dev: &mut ir::Device<'_>) {
                                     field.width = 8;
                                 }
                             }
+                        }
+
+                        // DMA related
+                        "TASKS_STARTRX" | "TASKS_STARTTX" | "RXD_PTR" | "TXD_PTR" => {
+                            reg.access.make_write_unsafe();
                         }
 
                         _ => {}

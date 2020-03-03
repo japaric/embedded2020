@@ -193,6 +193,7 @@ static mut SEMIDAP_BUFFER: UnsafeCell<MaybeUninit<[u8; SHARED_CAPACITY]>> =
 #[no_mangle]
 static SEMIDAP_CURSOR: Cursor = Cursor::new();
 
+// XXX does this actually speed up things?
 // Only visible to the target
 #[link_section = ".uninit.BUFFER"]
 static mut BUFFER: UnsafeCell<MaybeUninit<[u8; LOCAL_CAPACITY]>> =
@@ -251,16 +252,20 @@ impl Stdout {
 
     fn write(&mut self, bytes: &[u8]) {
         unsafe {
-            let mut cursor = CURSOR.get().into();
-            let len = bytes.len();
+            let mut len = bytes.len();
+            let mut p = bytes.as_ptr();
 
-            if cursor + len > LOCAL_CAPACITY {
-                self.flush();
-                cursor = 0;
+            while len != 0 {
+                let cursor = CURSOR.get();
+                let n = cmp::min(len, LOCAL_CAPACITY - cursor as usize);
+                memcpy(p, (BUFFER.get() as *mut u8).add(cursor.into()), n);
+                CURSOR.set(cursor + n as u8);
+                len -= n;
+                p = p.add(n);
+                if cursor as usize + len > LOCAL_CAPACITY {
+                    self.flush();
+                }
             }
-
-            memcpy(bytes.as_ptr(), (BUFFER.get() as *mut u8).add(cursor), len);
-            CURSOR.set((cursor + len) as u8)
         }
     }
 }

@@ -8,7 +8,7 @@ use panic_abort as _; // panic handler
 
 #[no_mangle]
 fn main() -> ! {
-    semidap::assert!(false);
+    semidap::assert!(false, "assertion failed");
 
     semidap::exit(0)
 }

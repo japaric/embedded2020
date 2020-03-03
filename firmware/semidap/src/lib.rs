@@ -7,59 +7,117 @@
 use core::{
     cell::{Cell, UnsafeCell},
     cmp,
-    convert::Infallible,
     marker::PhantomData,
     mem::MaybeUninit,
-    str,
     sync::atomic::{self, AtomicUsize, Ordering},
 };
 
-use proc_macro_hack::proc_macro_hack;
+#[doc(hidden)]
+pub use binfmt::{binWrite, binwriteln, Level};
+
+/// Prints the formatted string to the host console
+///
+/// A newline will be appended to the end of the format string
+#[macro_export]
+macro_rules! println {
+    ($($tt:tt)+) => {
+        if let Some(mut __stdout__) = $crate::stdout() {
+            $crate::binwriteln!(&mut __stdout__, $($tt)+)
+        }
+    }
+}
 
 /// Logs the formatted string at the `Debug` log level
 ///
 /// A newline will be appended to the end of the format string
-#[proc_macro_hack(support_nested)]
-pub use semidap_macros::debug;
+#[macro_export]
+macro_rules! debug {
+    ($($tt:tt)+) => {
+        if cfg!(debug_assertions) {
+            if let Some(mut __stdout__) = $crate::stdout() {
+                $crate::log(&mut __stdout__, $crate::Level::Debug);
+                $crate::binwriteln!(&mut __stdout__, $($tt)+)
+            }
+        }
+    }
+}
 
 /// Logs the formatted string at the `Error` log level
 ///
 /// A newline will be appended to the end of the format string
-#[proc_macro_hack(support_nested)]
-pub use semidap_macros::error;
+#[macro_export]
+macro_rules! error {
+    ($($tt:tt)+) => {
+        if let Some(mut __stdout__) = $crate::stdout() {
+            $crate::log(&mut __stdout__, $crate::Level::Error);
+            $crate::binwriteln!(&mut __stdout__, $($tt)+)
+        }
+    }
+}
 
 /// Logs the formatted string at the `Info` log level
 ///
 /// A newline will be appended to the end of the format string
-#[proc_macro_hack(support_nested)]
-pub use semidap_macros::info;
+#[macro_export]
+macro_rules! info {
+    ($($tt:tt)+) => {
+        if let Some(mut __stdout__) = $crate::stdout() {
+            $crate::log(&mut __stdout__, $crate::Level::Info);
+            $crate::binwriteln!(&mut __stdout__, $($tt)+)
+        }
+    }
+}
 
 /// Logs the formatted string at the `Trace` log level
 ///
 /// A newline will be appended to the end of the format string
-#[proc_macro_hack(support_nested)]
-pub use semidap_macros::trace;
+#[macro_export]
+macro_rules! trace {
+    ($($tt:tt)+) => {
+        if cfg!(debug_assertions) {
+            if let Some(mut __stdout__) = $crate::stdout() {
+                $crate::log(&mut __stdout__, $crate::Level::Trace);
+                $crate::binwriteln!(&mut __stdout__, $($tt)+)
+            }
+        }
+    }
+}
 
 /// Logs the formatted string at the `Warn` log level
 ///
 /// A newline will be appended to the end of the format string
-#[proc_macro_hack(support_nested)]
-pub use semidap_macros::warn;
+#[macro_export]
+macro_rules! warn {
+    ($($tt:tt)+) => {
+        if let Some(mut __stdout__) = $crate::stdout() {
+            $crate::log(&mut __stdout__, $crate::Level::Warn);
+            $crate::binwriteln!(&mut __stdout__, $($tt)+)
+        }
+    }
+}
 
-/// Prints the formatted string to the host console
-#[proc_macro_hack(support_nested)]
-pub use semidap_macros::print;
-
-/// Prints the formatted string to the host console
-///
-/// A newline will be appended to the end of the format string
-#[proc_macro_hack(support_nested)]
-pub use semidap_macros::println;
+/// Flushes the local buffer
+// TODO expose the local `BUFFER` to the host so it can drain it in `abort` and
+// stack overflow scenarios; then make this private again
+pub fn flush() {
+    if let Some(mut stdout) = stdout() {
+        stdout.flush();
+    }
+}
 
 fn in_thread_mode() -> bool {
     const SCB_ICSR: *const u32 = 0xE000_ED04 as *const u32;
 
     unsafe { SCB_ICSR.read_volatile() as u8 == 0 }
+}
+
+#[doc(hidden)]
+pub fn log(stdout: &mut impl binWrite, level: Level) {
+    extern "Rust" {
+        fn __semidap_timestamp() -> u32;
+    }
+    let ts = unsafe { __semidap_timestamp() };
+    stdout.log(level, ts);
 }
 
 /// Aborts the `semidap` process running on the host
@@ -68,6 +126,7 @@ pub fn abort() -> ! {
     extern "C" {
         fn __abort() -> !;
     }
+    flush();
     unsafe { __abort() }
 }
 
@@ -77,6 +136,7 @@ pub fn exit(code: i32) -> ! {
     extern "C" {
         fn __exit(r0: i32) -> !;
     }
+    flush();
     unsafe { __exit(code) }
 }
 
@@ -119,14 +179,15 @@ impl Cursor {
     }
 }
 
-const CAPACITY: usize = 256;
+const SHARED_CAPACITY: usize = 4 * LOCAL_CAPACITY; // holds ~4 HID packets
+const LOCAL_CAPACITY: usize = 64; // size of 1 HID packet
 
 // TODO support logging in interrupt context. Place all the cursors in an array
 // so the host can read them in a single DAP transaction (`DAP_TransferBlock`)
 // Host visible
 #[link_section = ".uninit.SEMIDAP_BUFFER"]
 #[no_mangle]
-static mut SEMIDAP_BUFFER: UnsafeCell<MaybeUninit<[u8; CAPACITY]>> =
+static mut SEMIDAP_BUFFER: UnsafeCell<MaybeUninit<[u8; SHARED_CAPACITY]>> =
     UnsafeCell::new(MaybeUninit::uninit());
 
 #[no_mangle]
@@ -134,15 +195,14 @@ static SEMIDAP_CURSOR: Cursor = Cursor::new();
 
 // Only visible to the target
 #[link_section = ".uninit.BUFFER"]
-static mut BUFFER: UnsafeCell<MaybeUninit<[u8; CAPACITY]>> =
+static mut BUFFER: UnsafeCell<MaybeUninit<[u8; LOCAL_CAPACITY]>> =
     UnsafeCell::new(MaybeUninit::uninit());
 
 static mut CURSOR: Cell<u8> = Cell::new(0);
 
 impl Stdout {
     #[cold]
-    #[doc(hidden)]
-    pub fn flush(&mut self) {
+    fn flush(&mut self) {
         unsafe {
             let dst = SEMIDAP_BUFFER.get() as *mut u8;
             let mut src = BUFFER.get() as *const u8;
@@ -153,18 +213,20 @@ impl Stdout {
                 let read = SEMIDAP_CURSOR.read.load(Ordering::Relaxed);
                 atomic::compiler_fence(Ordering::Acquire);
 
-                let free = read.wrapping_add(CAPACITY).wrapping_sub(write);
+                let free =
+                    read.wrapping_add(SHARED_CAPACITY).wrapping_sub(write);
                 if free == 0 {
                     // busy wait
                     continue;
                 }
 
                 let step = cmp::min(left, free);
-                let cursor = write % CAPACITY;
+                let cursor = write % SHARED_CAPACITY;
 
-                if cursor + step > CAPACITY {
+                if cursor + step > SHARED_CAPACITY {
                     // split memcpy
-                    let m = cursor.wrapping_add(step).wrapping_sub(CAPACITY);
+                    let m =
+                        cursor.wrapping_add(step).wrapping_sub(SHARED_CAPACITY);
 
                     // write cursor to end
                     memcpy(src, dst.add(cursor), step);
@@ -187,42 +249,12 @@ impl Stdout {
         }
     }
 
-    #[doc(hidden)]
-    pub fn write_str(&mut self, s: &str) {
-        self.write(s.as_bytes())
-    }
-
-    // NOTE currently limited to 256 strings but we could use LEB128 encoding
-    // here
-    #[doc(hidden)]
-    pub fn write_sym(&mut self, sym: *const u8) {
-        self.write(&[consts::UTF8_SYMTAB_STRING, sym as u8])
-    }
-
-    #[doc(hidden)]
-    pub fn write_timestamp(&mut self) {
-        extern "Rust" {
-            // NOTE currently this is always a 24-bit value
-            fn semidap_timestamp() -> u32;
-        }
-
-        let ts = unsafe { semidap_timestamp() };
-        // little endian encoding
-        self.write(&[
-            consts::UTF8_TIMESTAMP,
-            ts as u8,
-            (ts >> 8) as u8,
-            (ts >> 16) as u8,
-        ])
-    }
-
-    #[doc(hidden)]
     fn write(&mut self, bytes: &[u8]) {
         unsafe {
             let mut cursor = CURSOR.get().into();
             let len = bytes.len();
 
-            if cursor + len > CAPACITY {
+            if cursor + len > LOCAL_CAPACITY {
                 self.flush();
                 cursor = 0;
             }
@@ -230,6 +262,12 @@ impl Stdout {
             memcpy(bytes.as_ptr(), (BUFFER.get() as *mut u8).add(cursor), len);
             CURSOR.set((cursor + len) as u8)
         }
+    }
+}
+
+impl binfmt::binWrite for Stdout {
+    fn write(&mut self, bytes: &[u8]) {
+        self.write(bytes)
     }
 }
 
@@ -251,23 +289,9 @@ unsafe fn memcpy(mut src: *const u8, mut dst: *mut u8, len: usize) {
     }
 }
 
-impl ufmt_write::uWrite for Stdout {
-    type Error = Infallible;
-
-    fn write_str(&mut self, s: &str) -> Result<(), Infallible> {
-        self.write_str(s);
-        Ok(())
-    }
-}
-
 /// Checks the condition and aborts the program if it evaluates to `false`
-// TODO turn into a procedural macro to merge the strings at compile time
 #[macro_export]
 macro_rules! assert {
-    ($e:expr) => {
-        $crate::assert!($e, "assertion failed: {}", stringify!($e))
-    };
-
     ($e:expr, $($tt:tt)*) => {
         if !$e {
             $crate::panic!($($tt)*)

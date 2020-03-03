@@ -2,15 +2,10 @@
 authors = ["Jorge Aparicio <jorge@japaric.io>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
-name = "semidap-macros"
+name = "binfmt"
 publish = false
 version = "0.0.0"
 
-[lib]
-proc-macro = true
-
 [dependencies]
+binfmt-macros = { path = "macros" }
 proc-macro-hack = "0.5.11"
-proc-macro2 = "1.0.8"
-quote = "1.0.2"
-syn = "1.0.14"

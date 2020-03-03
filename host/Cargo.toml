@@ -1,7 +1,7 @@
 [workspace]
 members = [
+  "binfmt-parser",
   "cmsis-dap",
   "regen",
   "semidap",
-  "semidap-macros",
 ]

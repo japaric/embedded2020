@@ -75,17 +75,17 @@ fn not_main() -> Result<i32, anyhow::Error> {
     let elf = &ElfFile::new(&bytes).map_err(anyhow::Error::msg)?;
 
     debug!("extracting allocatable sections from the ELF file");
-    let mut compressed_strings = BTreeMap::new();
+    let mut footprints = BTreeMap::new();
     let mut sections = vec![];
     let mut semidap_cursor = None;
     let mut semidap_buffer = None;
     let mut debug_frame = None;
     let mut range_names = vec![];
-    let log_shndx = elf
+    let binfmt_shndx = elf
         .section_iter()
         .zip(0..)
         .filter_map(|(sect, shndx)| {
-            if sect.get_name(elf) == Ok(".log") {
+            if sect.get_name(elf) == Ok(".binfmt") {
                 Some(shndx)
             } else {
                 None
@@ -144,8 +144,8 @@ fn not_main() -> Result<i32, anyhow::Error> {
                 if let SectionData::SymbolTable32(entries) = symtab {
                     for entry in entries {
                         if let Ok(name) = entry.get_name(elf) {
-                            if Some(entry.shndx() as u32) == log_shndx {
-                                compressed_strings.insert(entry.value(), name);
+                            if Some(entry.shndx() as u32) == binfmt_shndx {
+                                footprints.insert(entry.value(), name);
                             } else if Some(entry.shndx() as u32) == text_shndx
                                 && entry.size() != 0
                             {
@@ -312,62 +312,23 @@ fn not_main() -> Result<i32, anyhow::Error> {
         {
             let available =
                 drain(cursor, bufferp, cap, &mut stdout_buffer, &mut dap)?;
-            let mut n = 0;
+            let mut consumed = 0;
             let mut bytes = &*stdout_buffer;
             let total = bytes.len();
 
-            while n < total {
-                if let Err(e) = str::from_utf8(&bytes) {
-                    let pos = e.valid_up_to();
-                    stdout.write_all(&bytes[..pos])?;
-                    n += pos;
-
-                    bytes = &bytes[pos..];
-                    let first = bytes.first().cloned();
-
-                    // check for compressed string
-                    if first == Some(consts::UTF8_SYMTAB_STRING) {
-                        let addr = if let Some(byte) = bytes.get(1) {
-                            *byte as u64
-                        } else {
-                            break;
-                        };
-
-                        n += 2;
-                        bytes = &bytes[2..];
-
-                        if let Some(level) = Level::try_from(addr) {
-                            write!(stdout, "{} ", level)?
-                        } else {
-                            write!(stdout, "{}", compressed_strings[&addr])?;
-                        }
-                    } else if first == Some(consts::UTF8_TIMESTAMP) {
-                        let timestamp = if let Some(bytes) = bytes.get(1..4) {
-                            u32::from(bytes[0])
-                                | (u32::from(bytes[1]) << 8)
-                                | (u32::from(bytes[2]) << 16)
-                        } else {
-                            break;
-                        };
-
-                        n += 4;
-                        bytes = &bytes[4..];
-
-                        write!(stdout, "{} ", Timestamp(timestamp))?
-                    } else {
-                        // incomplete UTF-8 code-point
-                        break;
-                    }
-                } else {
-                    stdout.write_all(bytes)?;
-                    n += bytes.len();
-                }
+            debug!("{:?}", bytes);
+            while let Ok((node, i)) =
+                binfmt_parser::parse_stream(&bytes, &footprints)
+            {
+                consumed += i;
+                bytes = &bytes[i..];
+                write!(stdout, "{}", node)?
             }
 
-            if n == total {
+            if consumed == total {
                 stdout_buffer.clear();
             } else {
-                stdout_buffer = stdout_buffer[n..].to_owned();
+                stdout_buffer = stdout_buffer[consumed..].to_owned();
             }
 
             if available != 0 {
@@ -410,52 +371,6 @@ impl fmt::Display for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let timestamp = (self.0 as f64) / 32_768.0;
         write!(f, "{:>10.6}", timestamp)
-    }
-}
-
-enum Level {
-    Debug,
-    Error,
-    Info,
-    Trace,
-    Warn,
-}
-
-impl Level {
-    fn try_from(addr: u64) -> Option<Self> {
-        const ADDR_ERROR: u64 = 0;
-        const ADDR_WARN: u64 = 1;
-        const ADDR_INFO: u64 = 2;
-        const ADDR_DEBUG: u64 = 3;
-        const ADDR_TRACE: u64 = 4;
-
-        Some(if addr == ADDR_ERROR {
-            Level::Error
-        } else if addr == ADDR_WARN {
-            Level::Warn
-        } else if addr == ADDR_INFO {
-            Level::Info
-        } else if addr == ADDR_DEBUG {
-            Level::Debug
-        } else if addr == ADDR_TRACE {
-            Level::Trace
-        } else {
-            return None;
-        })
-    }
-}
-
-impl fmt::Display for Level {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use colored::*;
-
-        match self {
-            Level::Debug => f.write_str("DEBUG"),
-            Level::Error => write!(f, "{}", "ERROR".red()),
-            Level::Info => write!(f, "{} ", "INFO".green()),
-            Level::Trace => write!(f, "{}", "TRACE".dimmed()),
-            Level::Warn => write!(f, "{} ", "WARN".yellow()),
-        }
     }
 }
 

@@ -14,7 +14,8 @@ fn main() -> ! {
 
 fn fib(n: u32) -> u32 {
     let mut x = [n; 8 * 1024]; // allocate a 32 KB buffer on the stack
-    println!("SP = {:?}", x.as_mut_ptr());
+    println!("SP = {}", x.as_mut_ptr());
+    semidap::flush();
 
     if n < 2 {
         1

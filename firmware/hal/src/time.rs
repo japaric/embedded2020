@@ -24,7 +24,10 @@ impl ops::Sub for Instant {
     type Output = Duration;
 
     fn sub(self, rhs: Self) -> Duration {
-        semidap::assert!(self.inner >= rhs.inner);
+        semidap::assert!(
+            self.inner >= rhs.inner,
+            "supplied instant is later than self"
+        );
 
         // `ticks` is always less than `1 << 24`
         let ticks = self.inner.wrapping_sub(rhs.inner);

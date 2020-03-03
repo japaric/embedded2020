@@ -65,7 +65,7 @@ unsafe extern "C" fn Reset() {
 }
 
 #[no_mangle]
-fn semidap_timestamp() -> u32 {
+fn __semidap_timestamp() -> u32 {
     RTC0::borrow_unchecked(|rtc| rtc.COUNTER.read().into())
 }
 

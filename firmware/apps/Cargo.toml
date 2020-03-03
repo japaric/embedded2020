@@ -7,7 +7,7 @@ publish = false
 version = "0.0.0"
 
 [dependencies]
+binfmt = { path = "../../shared/binfmt" }
 hal = { path = "../hal" }
 panic-abort = { path = "../panic-abort" }
 semidap = { path = "../semidap" }
-ufmt = "0.1.0"

@@ -7,7 +7,7 @@ publish = false
 version = "0.0.0"
 
 [dependencies]
+binfmt = { path = "../../shared/binfmt" }
 cm = { path = "../../shared/cm" }
 pac = { path = "../pac", features = ["udebug"] }
 semidap = { path = "../semidap" }
-ufmt = "0.1.0"

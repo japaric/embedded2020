@@ -1,6 +1,6 @@
 #![deny(warnings)]
 
-use core::fmt;
+use core::fmt::{self, Write as _};
 use std::collections::BTreeMap;
 
 use binfmt::{Level, Tag};
@@ -11,6 +11,7 @@ pub enum Node<'f> {
     I32(i32),
     Log(Level, u32, Box<Node<'f>>),
     Pointer(u32),
+    Register(&'f str, u32),
     U32(u32),
 }
 
@@ -49,6 +50,10 @@ impl fmt::Display for Node<'_> {
 
             Node::Pointer(val) => write!(f, "{:#010x}", val),
 
+            Node::Register(footprint, val) => {
+                f.write_str(&dynfmt_register(footprint, *val))
+            }
+
             Node::U32(val) => write!(f, "{}", val),
         }
     }
@@ -77,6 +82,76 @@ fn dynfmt(footprint: &str, args: &[String]) -> String {
             let next = chars.peek();
 
             if next == Some(&'}') {
+                // escaped brace
+                chars.next();
+                s.push('}');
+            } else {
+                unreachable!()
+            }
+        } else {
+            s.push(c);
+        }
+    }
+    s
+}
+
+// NOTE assumes the footprint is well-formed
+fn dynfmt_register(footprint: &str, val: u32) -> String {
+    let mut s = String::new();
+    let mut chars = footprint.char_indices().peekable();
+    while let Some((start, c)) = chars.next() {
+        if c == '{' {
+            let next = chars.peek().map(|ci| ci.1);
+
+            if next == Some('{') {
+                // escaped brace
+                chars.next();
+                s.push('{');
+            } else {
+                let end = footprint[start..].find('}').unwrap() + start;
+
+                for _ in start..end {
+                    // skip this argument in the next `while let` iteration
+                    drop(chars.next());
+                }
+
+                // NOTE(+1) skips the left brace (`{`)
+                let bitfield = &footprint[start + 1..end];
+
+                if bitfield.contains(':') {
+                    // range
+                    let mut parts = bitfield.splitn(2, ':');
+                    let start = parts.next().unwrap().parse::<u8>().unwrap();
+                    let end = parts.next().unwrap().parse::<u8>().unwrap();
+                    let width = end - start;
+
+                    let val = (val >> start) & ((1 << (end - start)) - 1);
+
+                    // TODO improve formatting
+                    // - use leading zeros, e.g. 2-bit fields should be
+                    //   formatted as `0b00` and `0b01`
+                    // - use underscores to split long sequences in groups of 4,
+                    //   e.g. `0b10_0101` and `0xaa_bbcc`
+                    if width < 8 {
+                        write!(&mut s, "{:#b}", val).unwrap()
+                    } else {
+                        write!(&mut s, "{:#x}", val).unwrap()
+                    }
+                } else {
+                    // single bit
+                    let i = bitfield.parse::<u8>().unwrap();
+
+                    if val & (1 << i) == 0 {
+                        s.push('0')
+                    } else {
+                        s.push('1')
+                    }
+                }
+            }
+        } else if c == '}' {
+            let next = chars.peek().map(|ci| ci.1);
+
+            if next == Some('}') {
                 // escaped brace
                 chars.next();
                 s.push('}');
@@ -139,6 +214,29 @@ pub fn parse_stream<'f>(
             Ok((Node::U32(val), consumed))
         }
 
+        Tag::Register => {
+            let (val, i) = leb128_decode_u32(&bytes[1..])?;
+            consumed += i;
+            let footprint = footprints[&val.into()];
+            let width = get_register_width(footprint);
+
+            let p = bytes.get(consumed..consumed + width).ok_or(EoS)?.as_ptr();
+            consumed += width;
+
+            let val = unsafe {
+                if width == 1 {
+                    *p as u32
+                } else if width == 2 {
+                    u16::from_le_bytes(*(p as *const [u8; 2])).into()
+                } else if width <= 4 {
+                    u32::from_le_bytes(*(p as *const [u8; 4]))
+                } else {
+                    unreachable!()
+                }
+            };
+            Ok((Node::Register(footprint, val), consumed))
+        }
+
         Tag::Signed => todo!(),
 
         Tag::Debug | Tag::Error | Tag::Info | Tag::Trace | Tag::Warn => {
@@ -176,6 +274,47 @@ fn count_footprint_arguments(footprint: &str) -> usize {
         }
     }
     n
+}
+
+// NOTE assumes the footprint is well-formed
+// NOTE in bytes
+fn get_register_width(footprint: &str) -> usize {
+    let mut chars = footprint.char_indices().peekable();
+    while let Some((start, c)) = chars.next() {
+        if c == '{' {
+            let next = chars.peek().map(|ci| ci.1);
+            if next == Some('{') {
+                // escaped brace
+                chars.next();
+            } else {
+                // bitfield
+                let end = footprint[start..].find('}').unwrap() + start;
+                // NOTE(+1) skip the left brace (`{`)
+                let bitfield = &footprint[start + 1..end];
+
+                let highest_bit = if bitfield.contains(':') {
+                    // range
+                    let mut parts = bitfield.splitn(2, ':');
+                    drop(parts.next());
+                    parts.next().unwrap().parse::<usize>().unwrap()
+                } else {
+                    // individual bit
+                    bitfield.parse().unwrap()
+                };
+
+                return if highest_bit <= 8 {
+                    1
+                } else if highest_bit <= 16 {
+                    2
+                } else if highest_bit <= 32 {
+                    4
+                } else {
+                    unreachable!()
+                };
+            }
+        }
+    }
+    unreachable!()
 }
 
 const CONTINUE: u8 = 1 << 7;

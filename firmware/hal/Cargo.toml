@@ -9,5 +9,5 @@ version = "0.0.0"
 [dependencies]
 binfmt = { path = "../../shared/binfmt" }
 cm = { path = "../../shared/cm" }
-pac = { path = "../pac", features = ["udebug"] }
+pac = { path = "../pac", features = ["binfmt"] }
 semidap = { path = "../semidap" }

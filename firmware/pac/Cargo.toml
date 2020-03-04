@@ -6,13 +6,6 @@ name = "pac"
 publish = false
 version = "0.0.0"
 
-[dependencies.ufmt]
+[dependencies.binfmt]
 optional = true
-version = "0.1.0"
-
-[dependencies.regen-ufmt]
-optional = true
-path = "../../shared/regen-ufmt"
-
-[features]
-udebug = ["regen-ufmt", "ufmt"]
+path = "../../shared/binfmt"

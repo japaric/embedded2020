@@ -1,4 +1,4 @@
-//! Zero cost `f32` formatting
+//! Binary formatting
 
 #![no_main]
 #![no_std]

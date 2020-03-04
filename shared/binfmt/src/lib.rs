@@ -46,6 +46,7 @@ u8_enum! {
     Signed = 7,
     F32 = 8,
     Pointer = 9,
+    Register = 10,
 }
 
 #[repr(u8)]
@@ -69,6 +70,14 @@ pub trait binWrite: Sized {
     fn write_footprint(&mut self, sym: *const u8) {
         if cfg!(target_pointer_width = "32") {
             util::binfmt_u32(Tag::Footprint as u8, sym as u32, self)
+        } else {
+            todo!()
+        }
+    }
+
+    fn write_register(&mut self, sym: *const u8) {
+        if cfg!(target_pointer_width = "32") {
+            util::binfmt_u32(Tag::Register as u8, sym as u32, self)
         } else {
             todo!()
         }

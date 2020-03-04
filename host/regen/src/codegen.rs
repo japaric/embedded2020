@@ -217,6 +217,28 @@ fn register(register: &Register<'_>) -> TokenStream2 {
             // non-reserved width
             let nrty = util::bitwidth2ty(highest_bit);
 
+            let fields = register
+                .r_fields
+                .iter()
+                .rev()
+                .map(|field| {
+                    // TODO
+                    let range = if field.width == 1 {
+                        field.offset.to_string()
+                    } else {
+                        format!(
+                            "{}:{}",
+                            field.offset,
+                            field.offset + field.width
+                        )
+                    };
+                    format!("{}: {{{}}}", field.name, range)
+                })
+                .collect::<Vec<_>>();
+            let footprint =
+                format!("{} {{{{ {} }}}}", rname, fields.join(", "));
+            let section = format!(".binfmt.{}", footprint);
+
             mod_items.push(quote!(
                 /// View into the readable bitfields
                 #[derive(Clone, Copy)]
@@ -245,16 +267,15 @@ fn register(register: &Register<'_>) -> TokenStream2 {
                     }
                 }
 
-                #[cfg(feature = "udebug")]
-                impl ufmt::uDebug for R {
-                    fn fmt<W>(
-                        &self,
-                        f: &mut ufmt::Formatter<'_, W>,
-                    ) -> Result<(), W::Error>
-                    where
-                        W: ufmt::uWrite + ?Sized,
-                    {
-                        f.debug_struct(#rname)? #(. #chain)* .finish()
+                #[cfg(feature = "binfmt")]
+                impl binfmt::binDebug for R {
+                    fn fmt(&self, f: &mut impl binfmt::binWrite) {
+                        #[export_name = #footprint]
+                        #[link_section = #section]
+                        static SYM: u8 = 0;
+                        f.write_register(&SYM);
+                        // TODO encode 24-bit (and smaller) fields in 3 bytes
+                        f.write(&(*self).bits().to_le_bytes());
                     }
                 }
             ));

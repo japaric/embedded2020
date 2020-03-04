@@ -31,6 +31,9 @@ dependencies = [
 [[package]]
 name = "cm"
 version = "0.0.0"
+dependencies = [
+ "binfmt 0.0.0",
+]
 
 [[package]]
 name = "hal"
@@ -46,8 +49,7 @@ dependencies = [
 name = "pac"
 version = "0.0.0"
 dependencies = [
- "regen-ufmt 0.0.0",
- "ufmt 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "binfmt 0.0.0",
 ]
 
 [[package]]
@@ -89,13 +91,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "regen-ufmt"
-version = "0.0.0"
-dependencies = [
- "ufmt 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
 name = "semidap"
 version = "0.0.0"
 dependencies = [
@@ -127,32 +122,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ufmt"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "proc-macro-hack 0.5.11 (registry+https://github.com/rust-lang/crates.io-index)",
- "ufmt-macros 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "ufmt-write 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "ufmt-macros"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "proc-macro-hack 0.5.11 (registry+https://github.com/rust-lang/crates.io-index)",
- "proc-macro2 1.0.9 (registry+https://github.com/rust-lang/crates.io-index)",
- "quote 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "syn 1.0.16 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "ufmt-write"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
 name = "unicode-xid"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -163,7 +132,4 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum proc-macro2 1.0.9 (registry+https://github.com/rust-lang/crates.io-index)" = "6c09721c6781493a2a492a96b5a5bf19b65917fe6728884e7c44dd0c60ca3435"
 "checksum quote 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "053a8c8bcc71fcce321828dc897a98ab9760bef03a4fc36693c231e5b3216cfe"
 "checksum syn 1.0.16 (registry+https://github.com/rust-lang/crates.io-index)" = "123bd9499cfb380418d509322d7a6d52e5315f064fe4b3ad18a53d6b92c07859"
-"checksum ufmt 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "2e7ecea7ef79d3f8f878eee614afdf5256475c63ad76139d4da6125617c784a0"
-"checksum ufmt-macros 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "ed813e34a2bfa9dc58ee2ed8c8314d25e6d70c911486d64b8085cb695cfac069"
-"checksum ufmt-write 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "e87a2ed6b42ec5e28cc3b94c09982969e9227600b2e3dcbc1db927a84c06bd69"
 "checksum unicode-xid 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "826e7639553986605ec5979c7dd957c7895e93eabed50ab2ffa7f6128a75097c"

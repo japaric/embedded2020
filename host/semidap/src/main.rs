@@ -208,6 +208,8 @@ fn not_main() -> Result<i32, anyhow::Error> {
     let debug_frame = debug_frame
         .ok_or_else(|| anyhow!("`.debug_frame` section is missing"))?;
 
+    // FIXME this is not robust enough; when the process is killed (e.g. by
+    // `cargo-watch`) sometimes this errors with "`DAP_GetPacketSize` failed"
     dap.default_swd_configuration()?;
 
     let cpuid = dap.memory_read_word(CPUID::address() as usize as u32)?;

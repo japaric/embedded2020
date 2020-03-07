@@ -97,11 +97,21 @@ pub fn debug(input: TokenStream) -> TokenStream {
 
 #[proc_macro_hack]
 pub fn binwriteln(input: TokenStream) -> TokenStream {
-    write_(parse_macro_input!(input as Input), true)
+    write_(parse_macro_input!(input as Input), true, true)
         .unwrap_or_else(|e| e.to_compile_error().into())
 }
 
-fn write_(input: Input, newline: bool) -> parse::Result<TokenStream> {
+#[proc_macro_hack]
+pub fn binwriteln_(input: TokenStream) -> TokenStream {
+    write_(parse_macro_input!(input as Input), true, false)
+        .unwrap_or_else(|e| e.to_compile_error().into())
+}
+
+fn write_(
+    input: Input,
+    newline: bool,
+    tag: bool,
+) -> parse::Result<TokenStream> {
     let mut footprint = input.footprint.value();
     if newline {
         footprint.push('\n');
@@ -122,15 +132,20 @@ fn write_(input: Input, newline: bool) -> parse::Result<TokenStream> {
     }
 
     let section = format!(".binfmt.{}", footprint);
+    let tag = if tag {
+        Some(quote!(<_ as binfmt::binWrite>::write_byte(
+            __f__,
+            binfmt::Tag::Footprint as u8,
+        );))
+    } else {
+        None
+    };
     let write = if input.args.is_empty() {
         quote!(
             #[export_name = #footprint]
             #[link_section = #section]
             static SYM: u8 = 0;
-            <_ as binfmt::binWrite>::write_byte(
-                __f__,
-                binfmt::Tag::Footprint as u8,
-            );
+            #tag
             <_ as binfmt::binWrite>::write_sym(__f__, &SYM);
         )
     } else {
@@ -150,10 +165,7 @@ fn write_(input: Input, newline: bool) -> parse::Result<TokenStream> {
                     #[export_name = #footprint]
                     #[link_section = #section]
                     static SYM: u8 = 0;
-                    <_ as binfmt::binWrite>::write_byte(
-                        __f__,
-                        binfmt::Tag::Footprint as u8,
-                    );
+                    #tag
                     <_ as binfmt::binWrite>::write_sym(__f__, &SYM);
                     #(#stmts;)*
                 }

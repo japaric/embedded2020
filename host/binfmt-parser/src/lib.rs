@@ -9,7 +9,7 @@ pub enum Node<'f> {
     F32(f32),
     Footprint(&'f str, Vec<Node<'f>>),
     I32(i32),
-    Log(Level, u32, Box<Node<'f>>),
+    Log(Level, u32, &'f str, Vec<Node<'f>>),
     Pointer(u32),
     Register(&'f str, u32),
     U32(u32),
@@ -31,7 +31,7 @@ impl fmt::Display for Node<'_> {
 
             Node::I32(val) => write!(f, "{}", val),
 
-            Node::Log(level, ts, node) => {
+            Node::Log(level, ts, footprint, nodes) => {
                 use colored::*;
 
                 let timestamp = (*ts as f64) / 1_000_000.;
@@ -45,7 +45,12 @@ impl fmt::Display for Node<'_> {
                     Level::Warn => write!(f, "{} ", "WARN".yellow())?,
                 }
 
-                write!(f, " {}", node)
+                let args = nodes
+                    .iter()
+                    .map(|node| node.to_string())
+                    .collect::<Vec<_>>();
+
+                f.write_str(&dynfmt(footprint, &args))
             }
 
             Node::Pointer(val) => write!(f, "{:#010x}", val),
@@ -180,7 +185,7 @@ pub fn parse_stream<'f>(
 
     match tag {
         Tag::F32 => {
-            let bytes = bytes.get(1..5).ok_or(EoS)?;
+            let bytes = bytes.get(consumed..consumed + 4).ok_or(EoS)?;
             consumed += 4;
             let bytes = unsafe { *(bytes.as_ptr() as *const [u8; 4]) };
             let val = f32::from_le_bytes(bytes);
@@ -188,7 +193,7 @@ pub fn parse_stream<'f>(
         }
 
         Tag::Footprint => {
-            let (val, i) = leb128_decode_u32(&bytes[1..])?;
+            let (val, i) = leb128_decode_u32(&bytes[consumed..])?;
             consumed += i;
             let footprint = footprints[&val.into()];
             let mut args = vec![];
@@ -201,7 +206,7 @@ pub fn parse_stream<'f>(
         }
 
         Tag::Pointer => {
-            let bytes = bytes.get(1..5).ok_or(EoS)?;
+            let bytes = bytes.get(consumed..consumed+4).ok_or(EoS)?;
             consumed += 4;
             let bytes = unsafe { *(bytes.as_ptr() as *const [u8; 4]) };
             let val = u32::from_le_bytes(bytes);
@@ -209,13 +214,13 @@ pub fn parse_stream<'f>(
         }
 
         Tag::Unsigned => {
-            let (val, i) = leb128_decode_u32(&bytes[1..])?;
+            let (val, i) = leb128_decode_u32(&bytes[consumed..])?;
             consumed += i;
             Ok((Node::U32(val), consumed))
         }
 
         Tag::Register => {
-            let (val, i) = leb128_decode_u32(&bytes[1..])?;
+            let (val, i) = leb128_decode_u32(&bytes[consumed..])?;
             consumed += i;
             let footprint = footprints[&val.into()];
             let width = get_register_width(footprint);
@@ -248,11 +253,18 @@ pub fn parse_stream<'f>(
                 Tag::Warn => Level::Warn,
                 _ => unreachable!(),
             };
-            let (ts, i) = leb128_decode_u32(&bytes[1..])?;
+            let (ts, i) = leb128_decode_u32(&bytes[consumed..])?;
             consumed += i;
-            let (node, i) = parse_stream(&bytes[consumed..], footprints)?;
+            let (val, i) = leb128_decode_u32(&bytes[consumed..])?;
             consumed += i;
-            Ok((Node::Log(level, ts, Box::new(node)), consumed))
+            let footprint = footprints[&val.into()];
+            let mut args = vec![];
+            for _ in 0..count_footprint_arguments(footprint) {
+                let (arg, i) = parse_stream(&bytes[consumed..], footprints)?;
+                consumed += i;
+                args.push(arg);
+            }
+            Ok((Node::Log(level, ts, footprint, args), consumed))
         }
     }
 }

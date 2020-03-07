@@ -7,9 +7,9 @@ mod util;
 
 use proc_macro_hack::proc_macro_hack;
 
-// add only if needed
-// #[proc_macro_hack]
-// pub use binfmt_macros::binwrite;
+#[doc(hidden)]
+#[proc_macro_hack]
+pub use binfmt_macros::binwriteln_;
 
 /// Writes a `binfmt` encoded format string plus arguments to the given writer
 #[proc_macro_hack]

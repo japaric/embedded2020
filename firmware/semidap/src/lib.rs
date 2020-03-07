@@ -10,7 +10,7 @@ use core::{
 };
 
 #[doc(hidden)]
-pub use binfmt::{binWrite, binwriteln, Level};
+pub use binfmt::{binWrite, binwriteln, binwriteln_, Level};
 
 /// Prints the formatted string to the host console
 ///
@@ -38,7 +38,7 @@ macro_rules! debug {
                 match $crate::stdout() {
                     ref mut __stdout__ => {
                         $crate::log(__stdout__, $crate::Level::Debug);
-                        $crate::binwriteln!(__stdout__, $($tt)+)
+                        $crate::binwriteln_!(__stdout__, $($tt)+)
                     }
                 }
             }
@@ -57,7 +57,7 @@ macro_rules! error {
         match $crate::stdout() {
             ref mut __stdout__ => {
                 $crate::log(__stdout__, $crate::Level::Error);
-                $crate::binwriteln!(__stdout__, $($tt)+)
+                $crate::binwriteln_!(__stdout__, $($tt)+)
             }
         }
     }
@@ -72,7 +72,7 @@ macro_rules! info {
         match $crate::stdout() {
             ref mut __stdout__ => {
                 $crate::log(__stdout__, $crate::Level::Info);
-                $crate::binwriteln!(__stdout__, $($tt)+)
+                $crate::binwriteln_!(__stdout__, $($tt)+)
             }
         }
     }
@@ -90,7 +90,7 @@ macro_rules! trace {
                 match $crate::stdout() {
                     ref mut __stdout__ => {
                         $crate::log(__stdout__, $crate::Level::Trace);
-                        $crate::binwriteln!(__stdout__, $($tt)+)
+                        $crate::binwriteln_!(__stdout__, $($tt)+)
                     }
                 }
             }
@@ -109,7 +109,7 @@ macro_rules! warn {
         match $crate::stdout() {
             ref mut __stdout__ => {
                 $crate::log(__stdout__, $crate::Level::Warn);
-                $crate::binwriteln!(__stdout__, $($tt)+)
+                $crate::binwriteln_!(__stdout__, $($tt)+)
             }
         }
     }

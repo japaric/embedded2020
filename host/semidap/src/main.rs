@@ -392,15 +392,6 @@ fn not_main() -> Result<i32, anyhow::Error> {
     Ok(0)
 }
 
-struct Timestamp(u32);
-
-impl fmt::Display for Timestamp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let timestamp = (self.0 as f64) / 32_768.0;
-        write!(f, "{:>10.6}", timestamp)
-    }
-}
-
 // if the target device is halted it is because it performed a system call using
 // the BKPT instruction. The immediate value passed to the BKPT instruction will
 // tell us which system call to service. All system calls are 'diverging' from

@@ -34,7 +34,7 @@ impl fmt::Display for Node<'_> {
             Node::Log(level, ts, node) => {
                 use colored::*;
 
-                let timestamp = (*ts as f64) / 32_768.0;
+                let timestamp = (*ts as f64) / 1_000_000.;
                 write!(f, "{:>10.6} ", timestamp)?;
 
                 match level {

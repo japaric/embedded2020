@@ -63,32 +63,37 @@ pub trait binDebug {
     fn fmt(&self, f: &mut impl binWrite);
 }
 
+const CONTINUE: u8 = 1 << 7;
+
 #[allow(non_camel_case_types)]
 pub trait binWrite: Sized {
+    fn write_byte(&mut self, byte: u8);
+
     fn write(&mut self, bytes: &[u8]);
 
-    fn write_footprint(&mut self, sym: *const u8) {
-        if cfg!(target_pointer_width = "32") {
-            util::binfmt_u32(Tag::Footprint as u8, sym as u32, self)
-        } else {
-            todo!()
+    fn leb128_write(&mut self, mut word: u32) {
+        loop {
+            let mut byte = (word & 0x7f) as u8;
+            word >>= 7;
+
+            if word != 0 {
+                byte |= CONTINUE;
+            }
+            self.write_byte(byte);
+
+            if word == 0 {
+                return;
+            }
         }
     }
 
-    fn write_register(&mut self, sym: *const u8) {
-        if cfg!(target_pointer_width = "32") {
-            util::binfmt_u32(Tag::Register as u8, sym as u32, self)
+    fn write_sym(&mut self, sym: *const u8) {
+        let sym = sym as u16;
+        if sym < 127 {
+            self.write_byte(sym as u8);
         } else {
-            todo!()
+            self.write_byte(sym as u8 | CONTINUE);
+            self.write_byte((sym >> 7) as u8);
         }
     }
-
-    fn log(&mut self, level: Level, timestamp: u32) {
-        util::binfmt_u32(level as u8, timestamp, self)
-    }
-}
-
-#[allow(deprecated)]
-unsafe fn uninitialized<T>() -> T {
-    core::mem::uninitialized()
 }

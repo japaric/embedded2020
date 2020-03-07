@@ -273,7 +273,8 @@ fn register(register: &Register<'_>) -> TokenStream2 {
                         #[export_name = #footprint]
                         #[link_section = #section]
                         static SYM: u8 = 0;
-                        f.write_register(&SYM);
+                        f.write_byte(binfmt::Tag::Register as u8);
+                        f.write_sym(&SYM);
                         // TODO encode 24-bit (and smaller) fields in 3 bytes
                         f.write(&(*self).bits().to_le_bytes());
                     }

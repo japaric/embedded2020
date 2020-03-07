@@ -74,7 +74,8 @@ pub fn debug(input: TokenStream) -> TokenStream {
                         #[export_name = #footprint]
                         #[link_section = #section]
                         static SYM: u8 = 0;
-                        f.write_footprint(&SYM);
+                        f.write_byte(binfmt::Tag::Footprint as u8);
+                        f.write_sym(&SYM);
                         #(#stmts;)*
                     }
                 }
@@ -126,7 +127,11 @@ fn write_(input: Input, newline: bool) -> parse::Result<TokenStream> {
             #[export_name = #footprint]
             #[link_section = #section]
             static SYM: u8 = 0;
-            <_ as binfmt::binWrite>::write_footprint(__f__, &SYM);
+            <_ as binfmt::binWrite>::write_byte(
+                __f__,
+                binfmt::Tag::Footprint as u8,
+            );
+            <_ as binfmt::binWrite>::write_sym(__f__, &SYM);
         )
     } else {
         let args = input.args.iter();
@@ -145,7 +150,11 @@ fn write_(input: Input, newline: bool) -> parse::Result<TokenStream> {
                     #[export_name = #footprint]
                     #[link_section = #section]
                     static SYM: u8 = 0;
-                    <_ as binfmt::binWrite>::write_footprint(__f__, &SYM);
+                    <_ as binfmt::binWrite>::write_byte(
+                        __f__,
+                        binfmt::Tag::Footprint as u8,
+                    );
+                    <_ as binfmt::binWrite>::write_sym(__f__, &SYM);
                     #(#stmts;)*
                 }
             }

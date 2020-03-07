@@ -64,7 +64,7 @@ SECTIONS
   }
 }
 
-ASSERT(SIZEOF(.log) <= 256, "SIZEOF(.log) must not exceed 256 bytes");
+ASSERT(SIZEOF(.binfmt) < 16384, "SIZEOF(.binfmt) must not exceed 16383 bytes");
 
 /* Weak exceptions */
 Reserved = 0;

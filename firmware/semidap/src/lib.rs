@@ -6,10 +6,7 @@
 
 use core::{
     cell::{Cell, UnsafeCell},
-    cmp,
-    marker::PhantomData,
     mem::MaybeUninit,
-    sync::atomic::{self, AtomicUsize, Ordering},
 };
 
 #[doc(hidden)]
@@ -21,8 +18,10 @@ pub use binfmt::{binWrite, binwriteln, Level};
 #[macro_export]
 macro_rules! println {
     ($($tt:tt)+) => {
-        if let Some(mut __stdout__) = $crate::stdout() {
-            $crate::binwriteln!(&mut __stdout__, $($tt)+)
+        match $crate::stdout() {
+            ref mut __stdout__ => {
+                $crate::binwriteln!(&mut __stdout__, $($tt)+)
+            }
         }
     }
 }
@@ -33,11 +32,18 @@ macro_rules! println {
 #[macro_export]
 macro_rules! debug {
     ($($tt:tt)+) => {
-        if cfg!(debug_assertions) {
-            if let Some(mut __stdout__) = $crate::stdout() {
-                $crate::log(&mut __stdout__, $crate::Level::Debug);
-                $crate::binwriteln!(&mut __stdout__, $($tt)+)
+        match () {
+            #[cfg(debug_assertions)]
+            () => {
+                match $crate::stdout() {
+                    ref mut __stdout__ => {
+                        $crate::log(__stdout__, $crate::Level::Debug);
+                        $crate::binwriteln!(__stdout__, $($tt)+)
+                    }
+                }
             }
+            #[cfg(not(debug_assertions))]
+            () => {}
         }
     }
 }
@@ -48,9 +54,11 @@ macro_rules! debug {
 #[macro_export]
 macro_rules! error {
     ($($tt:tt)+) => {
-        if let Some(mut __stdout__) = $crate::stdout() {
-            $crate::log(&mut __stdout__, $crate::Level::Error);
-            $crate::binwriteln!(&mut __stdout__, $($tt)+)
+        match $crate::stdout() {
+            ref mut __stdout__ => {
+                $crate::log(__stdout__, $crate::Level::Error);
+                $crate::binwriteln!(__stdout__, $($tt)+)
+            }
         }
     }
 }
@@ -61,9 +69,11 @@ macro_rules! error {
 #[macro_export]
 macro_rules! info {
     ($($tt:tt)+) => {
-        if let Some(mut __stdout__) = $crate::stdout() {
-            $crate::log(&mut __stdout__, $crate::Level::Info);
-            $crate::binwriteln!(&mut __stdout__, $($tt)+)
+        match $crate::stdout() {
+            ref mut __stdout__ => {
+                $crate::log(__stdout__, $crate::Level::Info);
+                $crate::binwriteln!(__stdout__, $($tt)+)
+            }
         }
     }
 }
@@ -74,11 +84,18 @@ macro_rules! info {
 #[macro_export]
 macro_rules! trace {
     ($($tt:tt)+) => {
-        if cfg!(debug_assertions) {
-            if let Some(mut __stdout__) = $crate::stdout() {
-                $crate::log(&mut __stdout__, $crate::Level::Trace);
-                $crate::binwriteln!(&mut __stdout__, $($tt)+)
+        match () {
+            #[cfg(debug_assertions)]
+            () => {
+                match $crate::stdout() {
+                    ref mut __stdout__ => {
+                        $crate::log(__stdout__, $crate::Level::Trace);
+                        $crate::binwriteln!(__stdout__, $($tt)+)
+                    }
+                }
             }
+            #[cfg(not(debug_assertions))]
+            () => {}
         }
     }
 }
@@ -89,19 +106,12 @@ macro_rules! trace {
 #[macro_export]
 macro_rules! warn {
     ($($tt:tt)+) => {
-        if let Some(mut __stdout__) = $crate::stdout() {
-            $crate::log(&mut __stdout__, $crate::Level::Warn);
-            $crate::binwriteln!(&mut __stdout__, $($tt)+)
+        match $crate::stdout() {
+            ref mut __stdout__ => {
+                $crate::log(__stdout__, $crate::Level::Warn);
+                $crate::binwriteln!(__stdout__, $($tt)+)
+            }
         }
-    }
-}
-
-/// Flushes the local buffer
-// TODO expose the local `BUFFER` to the host so it can drain it in `abort` and
-// stack overflow scenarios; then make this private again
-pub fn flush() {
-    if let Some(mut stdout) = stdout() {
-        stdout.flush();
     }
 }
 
@@ -117,7 +127,8 @@ pub fn log(stdout: &mut impl binWrite, level: Level) {
         fn __semidap_timestamp() -> u32;
     }
     let ts = unsafe { __semidap_timestamp() };
-    stdout.log(level, ts);
+    stdout.write_byte(level as u8);
+    stdout.leb128_write(ts);
 }
 
 /// Aborts the `semidap` process running on the host
@@ -126,7 +137,6 @@ pub fn abort() -> ! {
     extern "C" {
         fn __abort() -> !;
     }
-    flush();
     unsafe { __abort() }
 }
 
@@ -136,143 +146,111 @@ pub fn exit(code: i32) -> ! {
     extern "C" {
         fn __exit(r0: i32) -> !;
     }
-    flush();
     unsafe { __exit(code) }
 }
 
 #[doc(hidden)]
-pub struct Stdout {
-    _not_send_or_sync: PhantomData<*mut ()>,
+pub struct Channel {
+    bufferp: *mut u8,
+    // the `read` pointer is kept in host memory
+    write: &'static Cell<u16>,
 }
 
 /// Implementation detail
 /// # Safety
-/// None of `Stdout` methods are re-entrable
+/// None of `Channel` methods are re-entrant safe
 #[doc(hidden)]
-pub fn stdout() -> Option<Stdout> {
-    if in_thread_mode() {
-        Some(Stdout {
-            _not_send_or_sync: PhantomData,
-        })
-    } else {
-        None
-    }
-}
-
-/// Implementation detail
-#[doc(hidden)]
-#[repr(C)]
-pub struct Cursor {
-    // TODO(?) use `AtomicU16` instead of `AtomicUsize` then both cursors can be
-    // read in a single instruction
-    // NOTE this field can be modified by the debugger
-    read: AtomicUsize,
-    write: AtomicUsize,
-}
-
-impl Cursor {
-    const fn new() -> Self {
-        Self {
-            read: AtomicUsize::new(0),
-            write: AtomicUsize::new(0),
+pub fn stdout() -> Channel {
+    unsafe {
+        if in_thread_mode() {
+            Channel {
+                bufferp: SEMIDAP_BUFFER.get() as *mut _,
+                write: &SEMIDAP_CURSOR[0],
+            }
+        } else {
+            // TODO one channel per priority level
+            Channel {
+                bufferp: (SEMIDAP_BUFFER.get() as *mut u8).add(CAPACITY.into()),
+                write: &SEMIDAP_CURSOR[1],
+            }
         }
     }
 }
 
-const SHARED_CAPACITY: usize = 4 * LOCAL_CAPACITY; // holds ~4 HID packets
-const LOCAL_CAPACITY: usize = 64; // size of 1 HID packet
+// TODO(?) change this to the *usable* size of one HID packet
+const HID_PACKET_SIZE: u8 = 64;
+const CAPACITY: u16 = 8 * HID_PACKET_SIZE as u16;
 
-// TODO support logging in interrupt context. Place all the cursors in an array
-// so the host can read them in a single DAP transaction (`DAP_TransferBlock`)
-// Host visible
+#[no_mangle]
+static mut SEMIDAP_CURSOR: [Cell<u16>; 2] = [Cell::new(0), Cell::new(0)];
 #[link_section = ".uninit.SEMIDAP_BUFFER"]
 #[no_mangle]
-static mut SEMIDAP_BUFFER: UnsafeCell<MaybeUninit<[u8; SHARED_CAPACITY]>> =
-    UnsafeCell::new(MaybeUninit::uninit());
+static mut SEMIDAP_BUFFER: UnsafeCell<
+    MaybeUninit<[u8; 2 * CAPACITY as usize]>,
+> = UnsafeCell::new(MaybeUninit::uninit());
 
-#[no_mangle]
-static SEMIDAP_CURSOR: Cursor = Cursor::new();
-
-// XXX does this actually speed up things?
-// Only visible to the target
-#[link_section = ".uninit.BUFFER"]
-static mut BUFFER: UnsafeCell<MaybeUninit<[u8; LOCAL_CAPACITY]>> =
-    UnsafeCell::new(MaybeUninit::uninit());
-
-static mut CURSOR: Cell<u8> = Cell::new(0);
-
-impl Stdout {
-    #[cold]
-    fn flush(&mut self) {
-        unsafe {
-            let dst = SEMIDAP_BUFFER.get() as *mut u8;
-            let mut src = BUFFER.get() as *const u8;
-
-            let mut left = usize::from(CURSOR.get());
-            let mut write = SEMIDAP_CURSOR.write.load(Ordering::Relaxed);
-            while left != 0 {
-                let read = SEMIDAP_CURSOR.read.load(Ordering::Relaxed);
-                atomic::compiler_fence(Ordering::Acquire);
-
-                let free =
-                    read.wrapping_add(SHARED_CAPACITY).wrapping_sub(write);
-                if free == 0 {
-                    // busy wait
-                    continue;
-                }
-
-                let step = cmp::min(left, free);
-                let cursor = write % SHARED_CAPACITY;
-
-                if cursor + step > SHARED_CAPACITY {
-                    // split memcpy
-                    let m =
-                        cursor.wrapping_add(step).wrapping_sub(SHARED_CAPACITY);
-
-                    // write cursor to end
-                    memcpy(src, dst.add(cursor), step);
-
-                    // wrap-around to the beginning
-                    memcpy(src.add(m), dst, step - m);
-                } else {
-                    // single memcpy
-                    memcpy(src, dst.add(cursor), step);
-                }
-
-                left -= step;
-                src = src.add(step);
-                write = write.wrapping_add(step);
-                atomic::compiler_fence(Ordering::Release);
-                SEMIDAP_CURSOR.write.store(write, Ordering::Relaxed);
-            }
-
-            CURSOR.set(0);
-        }
+impl Channel {
+    fn push(&self, byte: u8) {
+        let write = self.write.get();
+        let cursor = write % CAPACITY;
+        unsafe { self.bufferp.add(cursor.into()).write(byte) }
+        self.write.set(write.wrapping_add(1));
     }
 
-    fn write(&mut self, bytes: &[u8]) {
-        unsafe {
-            let mut len = bytes.len();
-            let mut p = bytes.as_ptr();
+    fn extend_from_slice(&self, bytes: &[u8]) {
+        // NOTE we assume that `bytes.len` is less than `u16::max_value` which
+        // is very likely to be the case as logs are compressed
+        let len = bytes.len() as u16;
+        let write = self.write.get();
+        let cursor = write % CAPACITY;
 
-            while len != 0 {
-                let cursor = CURSOR.get();
-                let n = cmp::min(len, LOCAL_CAPACITY - cursor as usize);
-                memcpy(p, (BUFFER.get() as *mut u8).add(cursor.into()), n);
-                CURSOR.set(cursor + n as u8);
-                len -= n;
-                p = p.add(n);
-                if cursor as usize + len > LOCAL_CAPACITY {
-                    self.flush();
-                }
+        // NOTE it might be worth the do writes in `HID_PACKET_SIZE` chunks to
+        // improve the chances of the host advancing its `read` pointer during
+        // the execution of this method. OTOH, it's very unlikely that
+        // `bytes.len()` will be greater than `HID_PACKET_SIZE`
+        if cursor + len > CAPACITY {
+            // split memcpy
+            // NOTE here we assume that `bytes.len()` is less than `CAPACITY`.
+            // When that's not the case the second `memcpy` could result in an
+            // out of bounds write. It's very unlikely that `bytes.len()` will
+            // ever be greater than `CAPACITY` because logs are compressed
+            let pivot = cursor.wrapping_add(len).wrapping_sub(CAPACITY);
+            unsafe {
+                memcpy(
+                    bytes.as_ptr(),
+                    self.bufferp.add(cursor.into()),
+                    pivot.into(),
+                );
+                memcpy(
+                    bytes.as_ptr().add(pivot.into()),
+                    self.bufferp,
+                    (len - pivot).into(),
+                );
+            }
+        } else {
+            // single memcpy
+            unsafe {
+                memcpy(
+                    bytes.as_ptr(),
+                    self.bufferp.add(cursor.into()),
+                    len.into(),
+                )
             }
         }
+
+        // NOTE we want the `write` cursor to always be updated after `bufferp`.
+        // we may need a compiler barrier here
+        self.write.set(write.wrapping_add(len));
     }
 }
 
-impl binfmt::binWrite for Stdout {
+impl binfmt::binWrite for Channel {
+    fn write_byte(&mut self, byte: u8) {
+        self.push(byte)
+    }
+
     fn write(&mut self, bytes: &[u8]) {
-        self.write(bytes)
+        self.extend_from_slice(bytes)
     }
 }
 

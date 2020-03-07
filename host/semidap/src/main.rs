@@ -77,6 +77,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
     debug!("extracting allocatable sections from the ELF file");
     let mut footprints = BTreeMap::new();
     let mut sections = vec![];
+    let mut ncursors = 0;
     let mut semidap_cursor = None;
     let mut semidap_buffer = None;
     let mut debug_frame = None;
@@ -172,6 +173,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
 
                             if name == "SEMIDAP_CURSOR" {
                                 if let Ok(addr) = u32::try_from(entry.value()) {
+                                    ncursors = entry.size() / 2;
                                     semidap_cursor = Some(addr);
                                 }
                             } else if name == "SEMIDAP_BUFFER" {
@@ -265,86 +267,114 @@ fn not_main() -> Result<i32, anyhow::Error> {
 
     static CONTINUE: AtomicBool = AtomicBool::new(true);
     let mut twice = false;
-    let mut stdout_buffer = vec![];
+    let mut stdout_buffers = (0..ncursors).map(|_| vec![]).collect::<Vec<_>>();
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
+    // read cursors
+    let mut reads: Vec<u16> = (0..ncursors).map(|_| 0).collect();
+    // do proper clean-up on Ctrl-C
     ctrlc::set_handler(|| CONTINUE.store(false, Ordering::Relaxed))?;
     while CONTINUE.load(Ordering::Relaxed) {
         fn drain(
             cursorp: u32,
             bufferp: u32,
             cap: u32,
-            hbuffer: &mut Vec<u8>,
+            readps: &mut [u16],
+            hbuffers: &mut [Vec<u8>],
             dap: &mut Dap,
         ) -> Result<u32, anyhow::Error> {
-            let readp = cursorp;
             // TODO use atomic commands to read the cursor in a single DAP (HID)
             // transaction
-            let words = dap.memory_read::<u32>(cursorp, 2)?;
-            let read = words[0];
-            let write = words[1];
-            let available = write.wrapping_sub(read);
-            let cursor = read % cap;
+            let writes =
+                dap.memory_read::<u16>(cursorp, readps.len() as u32)?;
 
-            // TODO use atomic commands to read the buffer and update the `read`
-            // pointer in a single DAP (HID) transaction
-            if cursor + available > cap {
-                // the readable part wraps around the end of the buffer: do a
-                // split transfer
-                let pivot = cursor + available - cap;
-                let first_half = dap.memory_read(bufferp + cursor, pivot)?;
-                dap.memory_write_word(readp, read + pivot)?;
-                let second_half =
-                    dap.memory_read(bufferp, available - pivot)?;
-                dap.memory_write_word(readp, read + available)?;
-                hbuffer.extend_from_slice(&first_half);
-                hbuffer.extend_from_slice(&second_half);
-            } else {
-                // single transfer
-                let bytes = dap.memory_read(bufferp + cursor, available)?;
-                dap.memory_write_word(readp, read + available)?;
-                hbuffer.extend_from_slice(&bytes);
+            let mut xfer = 0;
+            let cap = cap / readps.len() as u32;
+            for i in 0..readps.len() {
+                let write = u32::from(writes[i]);
+                let read = u32::from(readps[i]);
+                let hbuffer = &mut hbuffers[i];
+                let bufferp = bufferp + cap * i as u32;
+
+                let available = write.wrapping_sub(read);
+                if available > cap {
+                    return Err(anyhow!(
+                        "fatal: semidap buffer has been overrun"
+                    ));
+                }
+                let cursor = read % cap;
+
+                if cursor + available > cap {
+                    // the readable part wraps around the end of the buffer: do a
+                    // split transfer
+                    let pivot = cursor + available - cap;
+                    let first_half =
+                        dap.memory_read(bufferp + cursor, pivot)?;
+                    let second_half =
+                        dap.memory_read(bufferp, available - pivot)?;
+                    hbuffer.extend_from_slice(&first_half);
+                    hbuffer.extend_from_slice(&second_half);
+                } else {
+                    // single transfer
+                    let bytes = dap.memory_read(bufferp + cursor, available)?;
+                    hbuffer.extend_from_slice(&bytes);
+                }
+
+                readps[i] = (read.wrapping_add(available)) as u16;
+                xfer += available;
             }
-
-            Ok(available)
+            Ok(xfer)
         }
 
-        let available = if let (Some(cursor), Some((bufferp, cap))) =
+        let xfer = if let (Some(cursor), Some((bufferp, cap))) =
             (semidap_cursor, semidap_buffer)
         {
-            let available =
-                drain(cursor, bufferp, cap, &mut stdout_buffer, &mut dap)?;
-            let mut consumed = 0;
-            let mut bytes = &*stdout_buffer;
-            let total = bytes.len();
+            let xfer = drain(
+                cursor,
+                bufferp,
+                cap,
+                &mut reads,
+                &mut stdout_buffers,
+                &mut dap,
+            )?;
 
-            debug!("{:?}", bytes);
-            while let Ok((node, i)) =
-                binfmt_parser::parse_stream(&bytes, &footprints)
-            {
-                consumed += i;
-                bytes = &bytes[i..];
-                write!(stdout, "{}", node)?
+            for (i, stdout_buffer) in stdout_buffers.iter_mut().enumerate() {
+                if stdout_buffer.is_empty() {
+                    continue;
+                }
+
+                let mut consumed = 0;
+                let mut bytes = &stdout_buffer[..];
+                let total = bytes.len();
+
+                debug!("{} @ {:?}", i, bytes);
+                while let Ok((node, i)) =
+                    binfmt_parser::parse_stream(&bytes, &footprints)
+                {
+                    consumed += i;
+                    bytes = &bytes[i..];
+                    write!(stdout, "{}", node)?
+                }
+
+                if consumed == total {
+                    stdout_buffer.clear();
+                } else {
+                    *stdout_buffer = stdout_buffer[consumed..].to_owned();
+                }
             }
 
-            if consumed == total {
-                stdout_buffer.clear();
-            } else {
-                stdout_buffer = stdout_buffer[consumed..].to_owned();
-            }
-
-            if available != 0 {
+            if xfer != 0 {
                 twice = false;
             }
 
-            available
+            xfer
         } else {
             0
         };
 
         // only attempt to handle syscalls whne the log buffer appears to be
         // empty two times in a row
-        if available == 0 {
+        if xfer == 0 {
             if !twice {
                 twice = true;
                 // look at the buffer one more time
@@ -354,11 +384,6 @@ fn not_main() -> Result<i32, anyhow::Error> {
             if let Some(code) =
                 handle_syscall(&mut dap, &debug_frame, &range_names)?
             {
-                if !stdout_buffer.is_empty() {
-                    stdout.write_all(
-                        String::from_utf8_lossy(&stdout_buffer[..]).as_bytes(),
-                    )?;
-                }
                 return Ok(code);
             }
         }

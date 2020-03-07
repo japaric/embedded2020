@@ -150,6 +150,7 @@ pub fn exit(code: i32) -> ! {
 }
 
 #[doc(hidden)]
+#[derive(Clone, Copy)]
 pub struct Channel {
     bufferp: *mut u8,
     // the `read` pointer is kept in host memory
@@ -161,19 +162,11 @@ pub struct Channel {
 /// None of `Channel` methods are re-entrant safe
 #[doc(hidden)]
 pub fn stdout() -> Channel {
-    unsafe {
-        if in_thread_mode() {
-            Channel {
-                bufferp: SEMIDAP_BUFFER.get() as *mut _,
-                write: &SEMIDAP_CURSOR[0],
-            }
-        } else {
-            // TODO one channel per priority level
-            Channel {
-                bufferp: (SEMIDAP_BUFFER.get() as *mut u8).add(CAPACITY.into()),
-                write: &SEMIDAP_CURSOR[1],
-            }
-        }
+    if in_thread_mode() {
+        unsafe { CHANNELS[0] }
+    } else {
+        // TODO one channel per priority level
+        unsafe { CHANNELS[1] }
     }
 }
 
@@ -185,9 +178,25 @@ const CAPACITY: u16 = 8 * HID_PACKET_SIZE as u16;
 static mut SEMIDAP_CURSOR: [Cell<u16>; 2] = [Cell::new(0), Cell::new(0)];
 #[link_section = ".uninit.SEMIDAP_BUFFER"]
 #[no_mangle]
-static mut SEMIDAP_BUFFER: UnsafeCell<
+static mut SEMIDAP_BUFFER: [UnsafeCell<
     MaybeUninit<[u8; 2 * CAPACITY as usize]>,
-> = UnsafeCell::new(MaybeUninit::uninit());
+>; 2] = [
+    UnsafeCell::new(MaybeUninit::uninit()),
+    UnsafeCell::new(MaybeUninit::uninit()),
+];
+
+static mut CHANNELS: [Channel; 2] = unsafe {
+    [
+        Channel {
+            write: &SEMIDAP_CURSOR[0],
+            bufferp: &SEMIDAP_BUFFER[0] as *const _ as *mut u8,
+        },
+        Channel {
+            write: &SEMIDAP_CURSOR[1],
+            bufferp: &SEMIDAP_BUFFER[1] as *const _ as *mut u8,
+        },
+    ]
+};
 
 impl Channel {
     fn push(&self, byte: u8) {

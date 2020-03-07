@@ -9,11 +9,7 @@ use proc_macro_hack::proc_macro_hack;
 
 #[doc(hidden)]
 #[proc_macro_hack]
-pub use binfmt_macros::binwriteln_;
-
-/// Writes a `binfmt` encoded format string plus arguments to the given writer
-#[proc_macro_hack]
-pub use binfmt_macros::binwriteln;
+pub use binfmt_macros::binwrite;
 
 macro_rules! u8_enum {
     ($($ident:ident = $expr:expr,)+) => {

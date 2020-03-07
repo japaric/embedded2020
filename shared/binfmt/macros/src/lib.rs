@@ -89,21 +89,9 @@ pub fn debug(input: TokenStream) -> TokenStream {
     ts.into()
 }
 
-// #[proc_macro_hack]
-// pub fn binwrite(input: TokenStream) -> TokenStream {
-//     write_(parse_macro_input!(input as Input), false)
-//         .unwrap_or_else(|e| e.to_compile_error().into())
-// }
-
 #[proc_macro_hack]
-pub fn binwriteln(input: TokenStream) -> TokenStream {
-    write_(parse_macro_input!(input as Input), true, true)
-        .unwrap_or_else(|e| e.to_compile_error().into())
-}
-
-#[proc_macro_hack]
-pub fn binwriteln_(input: TokenStream) -> TokenStream {
-    write_(parse_macro_input!(input as Input), true, false)
+pub fn binwrite(input: TokenStream) -> TokenStream {
+    write_(parse_macro_input!(input as Input), false, false)
         .unwrap_or_else(|e| e.to_compile_error().into())
 }
 

@@ -9,13 +9,15 @@ use panic_abort as _; // panic handler
 fn main() -> ! {
     semidap::info!("A");
 
+    // trigger `PendSV`
     SCB::borrow_unchecked(|scb| scb.ICSR.rmw(|_, w| w.PENDSVSET(1)));
 
-    semidap::info!("C");
+    semidap::info!("B");
 
     semidap::exit(0)
 }
 
+#[allow(non_snake_case)]
 #[no_mangle]
 fn PendSV() {
     semidap::info!("ZZZ");

@@ -338,7 +338,8 @@ fn not_main() -> Result<i32, anyhow::Error> {
                 &mut dap,
             )?;
 
-            for (i, stdout_buffer) in stdout_buffers.iter_mut().enumerate() {
+            let mut messages = vec![];
+            for (src, stdout_buffer) in stdout_buffers.iter_mut().enumerate() {
                 if stdout_buffer.is_empty() {
                     continue;
                 }
@@ -347,13 +348,13 @@ fn not_main() -> Result<i32, anyhow::Error> {
                 let mut bytes = &stdout_buffer[..];
                 let total = bytes.len();
 
-                debug!("{} @ {:?}", i, bytes);
-                while let Ok((node, i)) =
-                    binfmt_parser::parse_stream(&bytes, &footprints)
+                debug!("{}> {:?}", src, bytes);
+                while let Ok((message, i)) =
+                    binfmt_parser::parse_message(&bytes, &footprints)
                 {
                     consumed += i;
                     bytes = &bytes[i..];
-                    write!(stdout, "{}", node)?
+                    messages.push((src, message));
                 }
 
                 if consumed == total {
@@ -361,6 +362,13 @@ fn not_main() -> Result<i32, anyhow::Error> {
                 } else {
                     *stdout_buffer = stdout_buffer[consumed..].to_owned();
                 }
+            }
+
+            // FIXME this will still result in unordered messages
+            messages.sort_by_key(|(_, m)| m.timestamp);
+
+            for (src, message) in messages {
+                writeln!(stdout, "{}>{}", src, message)?;
             }
 
             if xfer != 0 {

@@ -10,21 +10,7 @@ use core::{
 };
 
 #[doc(hidden)]
-pub use binfmt::{binWrite, binwriteln, binwriteln_, Level};
-
-/// Prints the formatted string to the host console
-///
-/// A newline will be appended to the end of the format string
-#[macro_export]
-macro_rules! println {
-    ($($tt:tt)+) => {
-        match $crate::stdout() {
-            ref mut __stdout__ => {
-                $crate::binwriteln!(&mut __stdout__, $($tt)+)
-            }
-        }
-    }
-}
+pub use binfmt::{binWrite, binwrite, Level};
 
 /// Logs the formatted string at the `Debug` log level
 ///
@@ -38,7 +24,7 @@ macro_rules! debug {
                 match $crate::stdout() {
                     ref mut __stdout__ => {
                         $crate::log(__stdout__, $crate::Level::Debug);
-                        $crate::binwriteln_!(__stdout__, $($tt)+)
+                        $crate::binwrite!(__stdout__, $($tt)+)
                     }
                 }
             }
@@ -57,7 +43,7 @@ macro_rules! error {
         match $crate::stdout() {
             ref mut __stdout__ => {
                 $crate::log(__stdout__, $crate::Level::Error);
-                $crate::binwriteln_!(__stdout__, $($tt)+)
+                $crate::binwrite!(__stdout__, $($tt)+)
             }
         }
     }
@@ -72,7 +58,7 @@ macro_rules! info {
         match $crate::stdout() {
             ref mut __stdout__ => {
                 $crate::log(__stdout__, $crate::Level::Info);
-                $crate::binwriteln_!(__stdout__, $($tt)+)
+                $crate::binwrite!(__stdout__, $($tt)+)
             }
         }
     }
@@ -90,7 +76,7 @@ macro_rules! trace {
                 match $crate::stdout() {
                     ref mut __stdout__ => {
                         $crate::log(__stdout__, $crate::Level::Trace);
-                        $crate::binwriteln_!(__stdout__, $($tt)+)
+                        $crate::binwrite!(__stdout__, $($tt)+)
                     }
                 }
             }
@@ -109,7 +95,7 @@ macro_rules! warn {
         match $crate::stdout() {
             ref mut __stdout__ => {
                 $crate::log(__stdout__, $crate::Level::Warn);
-                $crate::binwriteln_!(__stdout__, $($tt)+)
+                $crate::binwrite!(__stdout__, $($tt)+)
             }
         }
     }

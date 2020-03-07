@@ -7,6 +7,7 @@ publish = false
 version = "0.0.0"
 
 [dependencies]
+asm = { path = "../asm" }
 binfmt = { path = "../../shared/binfmt" }
 cm = { path = "../../shared/cm", features = ["binfmt"] }
 hal = { path = "../hal" }

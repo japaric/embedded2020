@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "asm",
   "apps",
   "hal",
   "pac",

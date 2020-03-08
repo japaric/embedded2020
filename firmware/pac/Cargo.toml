@@ -12,6 +12,7 @@ path = "../../shared/binfmt"
 
 [features]
 CLOCK = []
+FICR = []
 P0 = []
 RTC0 = []
 USBD = []

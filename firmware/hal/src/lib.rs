@@ -8,7 +8,21 @@ pub mod led;
 pub mod time;
 
 use cm::{DCB, DWT};
-use pac::{CLOCK, P0, RTC0};
+use pac::{CLOCK, FICR, P0, RTC0};
+
+/// Reads the 32-bit cycle counter
+pub fn cyccnt() -> u32 {
+    // NOTE(borrow_unchecked) single-instruction read with no side effects
+    DWT::borrow_unchecked(|dwt| dwt.CYCCNT.read())
+}
+
+/// Returns the device identifier
+pub fn deviceid() -> u64 {
+    FICR::borrow_unchecked(|ficr| {
+        u64::from(ficr.DEVICEID0.read().bits())
+            | u64::from(ficr.DEVICEID1.read().bits()) << 32
+    })
+}
 
 #[no_mangle]
 unsafe extern "C" fn Reset() {
@@ -67,12 +81,6 @@ unsafe extern "C" fn Reset() {
 #[no_mangle]
 fn __semidap_timestamp() -> u32 {
     cyccnt() >> 6
-}
-
-/// Reads the 32-bit cycle counter
-pub fn cyccnt() -> u32 {
-    // NOTE(borrow_unchecked) single-instruction read with no side effects
-    DWT::borrow_unchecked(|dwt| dwt.CYCCNT.read())
 }
 
 #[repr(C)]

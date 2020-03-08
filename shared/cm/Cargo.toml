@@ -9,3 +9,8 @@ version = "0.0.0"
 [dependencies.binfmt]
 optional = true
 path = "../binfmt"
+
+[features]
+DCB = []
+DWT = []
+SCB = []

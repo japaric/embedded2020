@@ -78,7 +78,8 @@ fn audit_nrf52(dev: &mut ir::Device<'_>) {
                         }
 
                         // DMA related
-                        "TASKS_STARTRX" | "TASKS_STARTTX" | "RXD_PTR" | "TXD_PTR" => {
+                        "TASKS_STARTRX" | "TASKS_STARTTX" | "RXD_PTR"
+                        | "TXD_PTR" => {
                             reg.access.make_write_unsafe();
                         }
 

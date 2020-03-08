@@ -9,3 +9,8 @@ version = "0.0.0"
 [dependencies.binfmt]
 optional = true
 path = "../../shared/binfmt"
+
+[features]
+CLOCK = []
+P0 = []
+RTC0 = []

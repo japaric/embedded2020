@@ -46,10 +46,12 @@ fn common(name: &str, extra_docs: &Option<Cow<'_, str>>) -> TokenStream2 {
             fn base_address() -> usize;
         }
 
+        #[allow(dead_code)]
         struct NotSendOrSync {
             inner: PhantomData<*mut ()>,
         }
 
+        #[allow(dead_code)]
         impl NotSendOrSync {
             fn new() -> Self {
                 Self {
@@ -149,12 +151,15 @@ fn peripheral(peripheral: &Peripheral<'_>) -> TokenStream2 {
 
     let doc = peripheral.description.as_ref().unwrap_or(&peripheral.name);
     let name = format_ident!("{}", *peripheral.name);
+    let name_s = &peripheral.name;
     let mod_name = util::ident(&peripheral.name.to_snake_case());
     quote!(
         #[allow(non_camel_case_types)]
+        #[cfg(feature = #name_s)]
         #[doc = #doc]
         pub type #name = #mod_name::Registers;
 
+        #[cfg(feature = #name_s)]
         #[doc = #doc]
         pub mod #mod_name {
             #(#items)*

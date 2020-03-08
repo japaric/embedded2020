@@ -2,7 +2,7 @@
 #![no_std]
 
 use hal::led;
-use panic_abort as _;
+use panic_never as _; // this program contains zero core::panic* calls
 
 #[no_mangle]
 fn main() -> ! {

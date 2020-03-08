@@ -3,16 +3,17 @@
 
 use cm::SCB;
 use hal as _; // memory layout
-use panic_abort as _; // panic handler
+use panic_never as _; // this program contains zero core::panic* calls
 
 #[no_mangle]
 fn main() -> ! {
-    semidap::info!("A");
+    semidap::info!("thread mode");
+    foo();
 
     // trigger `PendSV`
     SCB::borrow_unchecked(|scb| scb.ICSR.rmw(|_, w| w.PENDSVSET(1)));
 
-    semidap::info!("B");
+    semidap::info!("DONE");
 
     semidap::exit(0)
 }
@@ -20,5 +21,10 @@ fn main() -> ! {
 #[allow(non_snake_case)]
 #[no_mangle]
 fn PendSV() {
-    semidap::info!("ZZZ");
+    semidap::info!("interrupt context");
+    foo();
+}
+
+fn foo() {
+    semidap::info!("foo");
 }

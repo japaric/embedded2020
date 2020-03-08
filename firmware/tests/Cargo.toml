@@ -13,4 +13,5 @@ cm = { path = "../../shared/cm", features = ["binfmt"] }
 hal = { path = "../hal" }
 pac = { path = "../pac" }
 panic-abort = { path = "../panic-abort" }
+panic-never = "0.1.0"
 semidap = { path = "../semidap" }

@@ -10,4 +10,5 @@ version = "0.0.0"
 binfmt = { path = "../../shared/binfmt" }
 hal = { path = "../hal" }
 panic-abort = { path = "../panic-abort" }
+panic-never = "0.1.0"
 semidap = { path = "../semidap" }

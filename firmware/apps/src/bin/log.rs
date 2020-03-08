@@ -4,7 +4,7 @@
 use core::time::Duration;
 
 use hal::time;
-use panic_abort as _; // panic handler
+use panic_never as _; // this program contains zero core::panic* calls
 
 #[no_mangle]
 fn main() -> ! {

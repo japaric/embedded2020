@@ -1,4 +1,6 @@
 //! Cortex-M assembly
+//!
+//! `cortex_m::asm` module but with CFI and size information
 
 #![deny(missing_docs)]
 #![deny(warnings)]

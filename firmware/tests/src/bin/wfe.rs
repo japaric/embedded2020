@@ -3,7 +3,7 @@
 
 use cm::SCB;
 use hal as _; // memory layout
-use panic_abort as _; // panic handler
+use panic_never as _; // this program contains zero core::panic* calls
 
 #[no_mangle]
 fn main() -> ! {

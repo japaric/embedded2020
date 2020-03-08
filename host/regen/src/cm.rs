@@ -418,6 +418,34 @@ fn peripherals() -> Vec<Peripheral<'static>> {
             ],
         },
         Peripheral {
+            description: Some("Nested Vector Interrupt Controller".into()),
+            instances: Instances::Single {
+                base_address: 0xE000_E100,
+            },
+            name: "NVIC".into(),
+            registers: vec![
+                // NOTE(unsafe_write) enabling interrupts can break critical section
+                Register {
+                    access: Access::ReadWrite { unsafe_write: true },
+                    description: Some("Interrupt Set-Enable Register 0".into()),
+                    name: "ISER0".into(),
+                    offset: 0x0,
+                    r_fields: vec![],
+                    w_fields: vec![],
+                    width: Width::U32,
+                },
+                Register {
+                    access: Access::ReadWrite { unsafe_write: true },
+                    description: Some("Interrupt Set-Enable Register 1".into()),
+                    name: "ISER1".into(),
+                    offset: 0x4,
+                    r_fields: vec![],
+                    w_fields: vec![],
+                    width: Width::U32,
+                },
+            ],
+        },
+        Peripheral {
             description: Some("System Control Block".into()),
             instances: Instances::Single {
                 base_address: 0xE000_ED00,

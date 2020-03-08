@@ -13,4 +13,5 @@ path = "../binfmt"
 [features]
 DCB = []
 DWT = []
+NVIC = []
 SCB = []

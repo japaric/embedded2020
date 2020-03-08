@@ -14,5 +14,6 @@ path = "../../shared/binfmt"
 CLOCK = []
 FICR = []
 P0 = []
+POWER = []
 RTC0 = []
 USBD = []

@@ -13,5 +13,5 @@ lto = true
 opt-level = 'z'
 
 [dependencies]
-cm = { path = "../shared/cm" }
-pac = { path = "../firmware/pac" }
+cm = { path = "../shared/cm", features = ["SCB"] }
+pac = { path = "../firmware/pac", features = ["P0"] }

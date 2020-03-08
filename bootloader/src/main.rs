@@ -17,10 +17,6 @@ const RAM_END: usize = 0x2004_0000;
 /// Entries in the vector table
 const ENTRIES: usize = 64; // NOTE must always be a power of 2
 
-/// Entries used by the NRF42840
-const DEVICE_ENTRIES: usize = 37;
-const CORTEX_M_ENTRIES: usize = 16;
-
 #[no_mangle]
 unsafe extern "C" fn Reset() -> ! {
     P0::borrow_unchecked(|p0| {
@@ -44,7 +40,9 @@ unsafe extern "C" fn Reset() -> ! {
         && vectors.iter().enumerate().skip(1).all(|(i, vector)| {
             if (7..11).contains(&i)
                 || i == 13
-                || (CORTEX_M_ENTRIES + DEVICE_ENTRIES..).contains(&i)
+                || (46..48).contains(&i)
+                || (59..61).contains(&i)
+                || i == 62
             {
                 *vector == 0
             } else {

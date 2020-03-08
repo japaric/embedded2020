@@ -84,6 +84,8 @@ union Vector {
 
 extern "C" {
     static __stack_top__: u32;
+
+    // Cortex-M exceptions
     fn NMI();
     fn HardFault();
     fn MemManage();
@@ -93,12 +95,112 @@ extern "C" {
     fn DebugMonitor();
     fn PendSV();
     fn SysTick();
-    fn DefaultHandler();
+
+    // nRF52840 interrupts
+    fn POWER_CLOCK();
+    fn RADIO();
+    fn UARTE0_UART0();
+    fn SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0();
+    fn SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1();
+    fn NFCT();
+    fn GPIOTE();
+    fn SAADC();
+    fn TIMER0();
+    fn TIMER1();
+    fn TIMER2();
+    fn RTC0();
+    fn TEMP();
+    fn RNG();
+    fn ECB();
+    fn CCM_AAR();
+    fn WDT();
+    fn RTC1();
+    fn QDEC();
+    fn COMP_LPCOMP();
+    fn SWI0_EGU0();
+    fn SWI1_EGU1();
+    fn SWI2_EGU2();
+    fn SWI3_EGU3();
+    fn SWI4_EGU4();
+    fn SWI5_EGU5();
+    fn TIMER3();
+    fn TIMER4();
+    fn PWM0();
+    fn PDM();
+    fn MWU();
+    fn PWM1();
+    fn PWM2();
+    fn SPIM2_SPIS2_SPI2();
+    fn RTC2();
+    fn I2S();
+    fn FPU();
+    fn USBD();
+    fn UARTE1();
+    fn QSPI();
+    fn CRYPTOCELL();
+    fn PWM3();
+    fn SPIM3();
+}
+
+/// Interrupts 0..32
+#[allow(missing_docs)]
+#[allow(non_camel_case_types)]
+pub enum Interrupt0 {
+    POWER_CLOCK = 0,
+    RADIO = 1,
+    UARTE0_UART0 = 2,
+    SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0 = 3,
+    SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1 = 4,
+    NFCT = 5,
+    GPIOTE = 6,
+    SAADC = 7,
+    TIMER0 = 8,
+    TIMER1 = 9,
+    TIMER2 = 10,
+    RTC0 = 11,
+    TEMP = 12,
+    RNG = 13,
+    ECB = 14,
+    CCM_AAR = 15,
+    WDT = 16,
+    RTC1 = 17,
+    QDEC = 18,
+    COMP_LPCOMP = 19,
+    SWI0_EGU0 = 20,
+    SWI1_EGU1 = 21,
+    SWI2_EGU2 = 22,
+    SWI3_EGU3 = 23,
+    SWI4_EGU4 = 24,
+    SWI5_EGU5 = 25,
+    TIMER3 = 26,
+    TIMER4 = 27,
+    PWM0 = 28,
+    PDM = 29,
+}
+
+/// Interrupts 32..
+#[allow(missing_docs)]
+#[allow(non_camel_case_types)]
+pub enum Interrupt1 {
+    MWU = 32,
+    PWM1 = 33,
+    PWM2 = 34,
+    SPIM2_SPIS2_SPI2 = 35,
+    RTC2 = 36,
+    I2S = 37,
+    FPU = 38,
+    USBD = 39,
+    UARTE1 = 40,
+    QSPI = 41,
+    CRYPTOCELL = 42,
+    PWM3 = 45,
+    SPIM3 = 47,
 }
 
 #[link_section = ".vectors"]
 #[no_mangle]
 static mut VECTORS: [Vector; 64] = [
+    // Cortex-M exceptions
     Vector {
         stack_pointer: unsafe { &__stack_top__ as *const u32 },
     },
@@ -121,127 +223,139 @@ static mut VECTORS: [Vector; 64] = [
     Vector { reserved: 0 },
     Vector { handler: PendSV },
     Vector { handler: SysTick },
-    // TODO
+    // nRF52840 interrupts
     Vector {
-        handler: DefaultHandler,
+        handler: POWER_CLOCK, // 0
     },
     Vector {
-        handler: DefaultHandler,
+        handler: RADIO, // 1
     },
     Vector {
-        handler: DefaultHandler,
+        handler: UARTE0_UART0, // 2
     },
     Vector {
-        handler: DefaultHandler,
+        handler: SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0, // 3
     },
     Vector {
-        handler: DefaultHandler,
+        handler: SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1, // 4
     },
     Vector {
-        handler: DefaultHandler,
+        handler: NFCT, // 5
     },
     Vector {
-        handler: DefaultHandler,
+        handler: GPIOTE, // 6
     },
     Vector {
-        handler: DefaultHandler,
+        handler: SAADC, // 7
     },
     Vector {
-        handler: DefaultHandler,
+        handler: TIMER0, // 8
     },
     Vector {
-        handler: DefaultHandler,
+        handler: TIMER1, // 9
     },
     Vector {
-        handler: DefaultHandler,
+        handler: TIMER2, // 10
     },
     Vector {
-        handler: DefaultHandler,
+        handler: RTC0, // 11
     },
     Vector {
-        handler: DefaultHandler,
+        handler: TEMP, // 12
     },
     Vector {
-        handler: DefaultHandler,
+        handler: RNG, // 13
     },
     Vector {
-        handler: DefaultHandler,
+        handler: ECB, // 14
     },
     Vector {
-        handler: DefaultHandler,
+        handler: CCM_AAR, // 15
     },
     Vector {
-        handler: DefaultHandler,
+        handler: WDT, // 16
     },
     Vector {
-        handler: DefaultHandler,
+        handler: RTC1, // 17
     },
     Vector {
-        handler: DefaultHandler,
+        handler: QDEC, // 18
     },
     Vector {
-        handler: DefaultHandler,
+        handler: COMP_LPCOMP, // 19
     },
     Vector {
-        handler: DefaultHandler,
+        handler: SWI0_EGU0, // 20
     },
     Vector {
-        handler: DefaultHandler,
+        handler: SWI1_EGU1, // 21
     },
     Vector {
-        handler: DefaultHandler,
+        handler: SWI2_EGU2, // 22
     },
     Vector {
-        handler: DefaultHandler,
+        handler: SWI3_EGU3, // 23
     },
     Vector {
-        handler: DefaultHandler,
+        handler: SWI4_EGU4, // 24
     },
     Vector {
-        handler: DefaultHandler,
+        handler: SWI5_EGU5, // 25
     },
     Vector {
-        handler: DefaultHandler,
+        handler: TIMER3, // 26
     },
     Vector {
-        handler: DefaultHandler,
+        handler: TIMER4, // 27
     },
     Vector {
-        handler: DefaultHandler,
+        handler: PWM0, // 28
     },
     Vector {
-        handler: DefaultHandler,
+        handler: PDM, // 29
+    },
+    Vector { reserved: 0 }, // 30
+    Vector { reserved: 0 }, // 31
+    Vector {
+        handler: MWU, // 32
     },
     Vector {
-        handler: DefaultHandler,
+        handler: PWM1, // 33
     },
     Vector {
-        handler: DefaultHandler,
+        handler: PWM2, // 34
     },
     Vector {
-        handler: DefaultHandler,
+        handler: SPIM2_SPIS2_SPI2, // 35
     },
     Vector {
-        handler: DefaultHandler,
+        handler: RTC2, // 36
     },
     Vector {
-        handler: DefaultHandler,
+        handler: I2S, // 37
     },
     Vector {
-        handler: DefaultHandler,
+        handler: FPU, // 38
     },
     Vector {
-        handler: DefaultHandler,
+        handler: USBD, // 39
     },
-    Vector { reserved: 0 },
-    Vector { reserved: 0 },
-    Vector { reserved: 0 },
-    Vector { reserved: 0 },
-    Vector { reserved: 0 },
-    Vector { reserved: 0 },
-    Vector { reserved: 0 },
-    Vector { reserved: 0 },
-    Vector { reserved: 0 },
-    Vector { reserved: 0 },
-    Vector { reserved: 0 },
+    Vector {
+        handler: UARTE1, // 40
+    },
+    Vector {
+        handler: QSPI, // 41
+    },
+    Vector {
+        handler: CRYPTOCELL, // 42
+    },
+    Vector { reserved: 0 }, // 43
+    Vector { reserved: 0 }, // 44
+    Vector {
+        handler: PWM3, // 45
+    },
+    Vector { reserved: 0 }, // 46
+    Vector {
+        handler: SPIM3, // 47
+    },
 ];

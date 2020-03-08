@@ -459,8 +459,20 @@ fn backtrace(
             Register::SP
         } else if reg.0 == 14 {
             Register::LR
+        } else if reg.0 == 10 {
+            Register::R10
+        } else if reg.0 == 9 {
+            Register::R9
+        } else if reg.0 == 8 {
+            Register::R8
         } else if reg.0 == 7 {
             Register::R7
+        } else if reg.0 == 6 {
+            Register::R6
+        } else if reg.0 == 5 {
+            Register::R5
+        } else if reg.0 == 4 {
+            Register::R4
         } else {
             panic!("unknown: {:?}", reg);
         }

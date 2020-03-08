@@ -140,7 +140,11 @@ fn dynfmt_register(footprint: &str, val: u32) -> String {
                     let end = parts.next().unwrap().parse::<u8>().unwrap();
                     let width = end - start;
 
-                    let val = (val >> start) & ((1 << (end - start)) - 1);
+                    let bits = if width != 32 {
+                        (val >> start) & ((1 << (end - start)) - 1)
+                    } else {
+                        val
+                    };
 
                     // TODO improve formatting
                     // - use leading zeros, e.g. 2-bit fields should be
@@ -148,9 +152,9 @@ fn dynfmt_register(footprint: &str, val: u32) -> String {
                     // - use underscores to split long sequences in groups of 4,
                     //   e.g. `0b10_0101` and `0xaa_bbcc`
                     if width < 8 {
-                        write!(&mut s, "{:#b}", val).unwrap()
+                        write!(&mut s, "{:#b}", bits).unwrap()
                     } else {
-                        write!(&mut s, "{:#x}", val).unwrap()
+                        write!(&mut s, "{:#x}", bits).unwrap()
                     }
                 } else {
                     // single bit

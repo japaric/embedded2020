@@ -35,48 +35,20 @@ pub fn peripheral<'a>(
 
     for cluster in regs {
         match cluster {
-            svd::RegisterCluster::Register(r) => match r {
-                svd::Register::Single(ri) => {
-                    ir_regs.push(translate::register(ri, None, &[defaults]));
-                }
+            svd::RegisterCluster::Register(r) => {
+                register_(r, None, &[defaults], &mut ir_regs)
+            }
 
-                svd::Register::Array(ri, dim) => {
-                    assert!(dim.dim_index.is_none(), "unimplemented");
-
-                    assert!(ri.name.contains("[%s]"), "unimplemented");
-                    let template = &ri.name;
-                    let offset = ri.address_offset;
-
-                    for i in 0..dim.dim {
-                        // FIXME too lazy to do ownership correctly right now
-                        let mut ri: &'static mut _ =
-                            Box::leak(Box::new(ri.clone()));
-
-                        ri.name = template.replace("[%s]", &i.to_string());
-                        ri.address_offset = offset + i * dim.dim_increment;
-
-                        ir_regs.push(translate::register(
-                            ri,
-                            None,
-                            &[defaults],
-                        ));
-                    }
-                }
-            },
             svd::RegisterCluster::Cluster(cluster) => match cluster {
                 svd::Cluster::Single(info) => {
                     for child in &info.children {
                         match child {
-                            svd::RegisterCluster::Register(ri) => {
-                                ir_regs.push(translate::register(
-                                    ri,
-                                    Some(info),
-                                    &[
-                                        defaults,
-                                        &info.default_register_properties,
-                                    ],
-                                ));
-                            }
+                            svd::RegisterCluster::Register(r) => register_(
+                                r,
+                                Some(info),
+                                &[&info.default_register_properties, defaults],
+                                &mut ir_regs,
+                            ),
 
                             svd::RegisterCluster::Cluster(..) => {
                                 unimplemented!()
@@ -85,7 +57,41 @@ pub fn peripheral<'a>(
                     }
                 }
 
-                svd::Cluster::Array(..) => unimplemented!(),
+                svd::Cluster::Array(ci, dim) => {
+                    assert!(dim.dim_index.is_none(), "unimplemented");
+                    assert!(ci.name.contains("[%s]"), "unimplemented");
+
+                    let template = &ci.name;
+                    let offset = ci.address_offset;
+
+                    for i in 0..dim.dim {
+                        // FIXME too lazy to do ownership correctly right now
+                        let ci: &'static mut _ =
+                            Box::leak(Box::new(ci.clone()));
+
+                        ci.name = template.replace("[%s]", &i.to_string());
+                        ci.address_offset = offset + i * dim.dim_increment;
+
+                        for child in &ci.children {
+                            match child {
+                                svd::RegisterCluster::Register(ri) => {
+                                    ir_regs.push(translate::register(
+                                        ri,
+                                        Some(ci),
+                                        &[
+                                            &ci.default_register_properties,
+                                            defaults,
+                                        ],
+                                    ));
+                                }
+
+                                svd::RegisterCluster::Cluster(..) => {
+                                    unimplemented!()
+                                }
+                            }
+                        }
+                    }
+                }
             },
         }
     }
@@ -97,6 +103,37 @@ pub fn peripheral<'a>(
             base_address: u64::from(p.base_address),
         },
         registers: ir_regs,
+    }
+}
+
+fn register_<'a>(
+    r: &'a svd::Register,
+    ci: Option<&svd::ClusterInfo>,
+    defaults: &[&svd::RegisterProperties],
+    ir_regs: &mut Vec<ir::Register<'a>>,
+) {
+    match r {
+        svd::Register::Single(ri) => {
+            ir_regs.push(translate::register(ri, ci, defaults));
+        }
+
+        svd::Register::Array(ri, dim) => {
+            assert!(dim.dim_index.is_none(), "unimplemented");
+            assert!(ri.name.contains("[%s]"), "unimplemented");
+
+            let template = &ri.name;
+            let offset = ri.address_offset;
+
+            for i in 0..dim.dim {
+                // FIXME too lazy to do ownership correctly right now
+                let mut ri: &'static mut _ = Box::leak(Box::new(ri.clone()));
+
+                ri.name = template.replace("[%s]", &i.to_string());
+                ri.address_offset = offset + i * dim.dim_increment;
+
+                ir_regs.push(translate::register(ri, ci, defaults));
+            }
+        }
     }
 }
 

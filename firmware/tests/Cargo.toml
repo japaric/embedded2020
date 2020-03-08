@@ -9,7 +9,7 @@ version = "0.0.0"
 [dependencies]
 asm = { path = "../asm" }
 binfmt = { path = "../../shared/binfmt" }
-cm = { path = "../../shared/cm", features = ["binfmt"] }
+cm = { path = "../../shared/cm", features = ["binfmt", "SCB"] }
 hal = { path = "../hal" }
 pac = { path = "../pac" }
 panic-abort = { path = "../panic-abort" }

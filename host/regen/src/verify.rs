@@ -22,6 +22,10 @@ impl Peripheral<'_> {
         }
 
         (|| {
+            if is_invalid_ident(&self.name) {
+                bail!("name is not a valid identifier");
+            }
+
             match &self.instances {
                 Instances::Many { instances } => {
                     let n = instances.len();
@@ -57,6 +61,10 @@ impl Register<'_> {
         }
 
         (|| {
+            if is_invalid_ident(&self.name) {
+                bail!("name is not a valid identifier");
+            }
+
             let reg_width = self.width.bits();
             for field in self.r_fields.iter().chain(&self.w_fields) {
                 field.verify()?;
@@ -110,4 +118,8 @@ impl Bitfield<'_> {
 
         Ok(())
     }
+}
+
+fn is_invalid_ident(s: &str) -> bool {
+    s.contains("%")
 }

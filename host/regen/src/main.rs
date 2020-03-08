@@ -24,7 +24,7 @@ fn main() -> Result<(), anyhow::Error> {
 }
 
 // Audited register writes
-const AUDITED: &[&str] = &["CLOCK", "P0", "RTC0", "TWIM0"];
+const AUDITED: &[&str] = &["CLOCK", "P0", "RTC0", "TWIM0", "USBD"];
 
 fn gen_nrf52(lib: &Path) -> Result<(), anyhow::Error> {
     let xml = fs::read_to_string("nrf52.svd")?;

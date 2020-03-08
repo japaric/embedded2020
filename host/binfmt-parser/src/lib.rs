@@ -39,6 +39,7 @@ impl fmt::Display for Message<'_> {
 }
 
 pub enum Node<'f> {
+    Bytes(Vec<u8>),
     F32(f32),
     Footprint(&'f str, Vec<Node<'f>>),
     I32(i32),
@@ -50,6 +51,20 @@ pub enum Node<'f> {
 impl fmt::Display for Node<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Node::Bytes(bytes) => {
+                f.write_str("[")?;
+                let mut first = true;
+                for byte in bytes {
+                    if first {
+                        first = false;
+                    } else {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{:#04x}", byte)?;
+                }
+                f.write_str("]")
+            }
+
             Node::F32(val) => write!(f, "{}", val),
 
             Node::Footprint(footprint, nodes) => {
@@ -238,6 +253,15 @@ pub fn parse_node<'f>(
     let mut consumed = 1;
 
     match tag {
+        Tag::Bytes => {
+            let (len, i) = leb128_decode_u32(&bytes[consumed..])?;
+            consumed += i;
+            let len = len as usize;
+            let bytes = bytes.get(consumed..consumed + len as usize).ok_or(EoS)?;
+            consumed += len;
+            Ok((Node::Bytes(bytes.to_owned()), consumed))
+        }
+
         Tag::F32 => {
             let bytes = bytes.get(consumed..consumed + 4).ok_or(EoS)?;
             consumed += 4;

@@ -59,3 +59,12 @@ impl<T> binDebug for *mut T {
         <*const T as binDebug>::fmt(&(*self as *const T), f)
     }
 }
+
+#[cfg(target_pointer_width = "32")]
+impl binDebug for [u8] {
+    fn fmt(&self, f: &mut impl binWrite) {
+        f.write_byte(Tag::Bytes as u8);
+        f.leb128_write(self.len() as u32);
+        f.write(self);
+    }
+}

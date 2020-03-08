@@ -43,6 +43,7 @@ u8_enum! {
     F32 = 8,
     Pointer = 9,
     Register = 10,
+    Bytes = 11,
 }
 
 #[repr(u8)]

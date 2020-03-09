@@ -15,3 +15,5 @@ DCB = []
 DWT = []
 NVIC = []
 SCB = []
+# mainly used to generate docs
+all = ["DCB", "DWT", "NVIC", "SCB"]

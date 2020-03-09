@@ -8,6 +8,12 @@ version = "0.0.0"
 
 [dependencies]
 binfmt = { path = "../../shared/binfmt" }
-cm = { path = "../../shared/cm", features = ["DCB", "DWT"] }
-pac = { path = "../pac", features = ["binfmt", "CLOCK", "FICR", "P0", "RTC0"] }
 semidap = { path = "../semidap" }
+
+[dependencies.cm]
+features = ["DCB", "DWT", "NVIC"]
+path = "../../shared/cm"
+
+[dependencies.pac]
+features = ["binfmt", "CLOCK", "FICR", "P0", "POWER", "RTC0", "USBD"]
+path = "../pac"

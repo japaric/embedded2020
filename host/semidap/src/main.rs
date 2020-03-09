@@ -459,6 +459,8 @@ fn backtrace(
             Register::SP
         } else if reg.0 == 14 {
             Register::LR
+        } else if reg.0 == 11 {
+            Register::R11
         } else if reg.0 == 10 {
             Register::R10
         } else if reg.0 == 9 {

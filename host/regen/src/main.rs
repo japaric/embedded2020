@@ -37,19 +37,18 @@ fn gen_nrf52(lib: &Path) -> Result<(), anyhow::Error> {
 
 fn audit_nrf52(dev: &mut ir::Device<'_>) {
     for periph in &mut dev.peripherals {
-        match &*periph.name {
-            "RTC0" => {
-                for reg in &mut periph.registers {
-                    match &*reg.name {
-                        // enabling interrupts can break critical sections
-                        "INTENSET" => {
-                            reg.access.make_write_unsafe();
-                        }
-                        _ => {}
-                    }
+        // all peripherals
+        for reg in &mut periph.registers {
+            match &*reg.name {
+                // enabling interrupts can break critical sections
+                "INTEN" | "INTENSET" => {
+                    reg.access.make_write_unsafe();
                 }
+                _ => {}
             }
+        }
 
+        match &*periph.name {
             // Fix bitfield widths to match the OPS
             "TWIM0" => {
                 for reg in &mut periph.registers {

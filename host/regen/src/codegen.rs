@@ -420,6 +420,14 @@ fn register(register: &Register<'_>) -> TokenStream2 {
                             }
                         }
                     }
+
+                    impl W {
+                        /// Copies the contents of `R`
+                        pub fn copy(&mut self, r: R) -> &mut Self {
+                            *self = r.into();
+                            self
+                        }
+                    }
                 ));
 
                 rmethods.push(quote!(

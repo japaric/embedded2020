@@ -326,10 +326,10 @@ fn not_main() -> Result<i32, anyhow::Error> {
             Ok(xfer)
         }
 
-        let xfer = if let (Some(cursor), Some((bufferp, cap))) =
+        if let (Some(cursor), Some((bufferp, cap))) =
             (semidap_cursor, semidap_buffer)
         {
-            let xfer = drain(
+            drain(
                 cursor,
                 bufferp,
                 cap,
@@ -370,29 +370,16 @@ fn not_main() -> Result<i32, anyhow::Error> {
             for (src, message) in messages {
                 writeln!(stdout, "{}>{}", src, message)?;
             }
+        }
 
-            if xfer != 0 {
-                twice = false;
-            }
-
-            xfer
-        } else {
-            0
-        };
-
-        // only attempt to handle syscalls whne the log buffer appears to be
-        // empty two times in a row
-        if xfer == 0 {
-            if !twice {
+        // only handle a syscall when the device is halted, but first try to
+        // drain the buffer
+        // TODO(?) merge this with reading the cursors using an atomic command
+        if dap.is_halted()? {
+            if twice {
+                return handle_syscall(&mut dap, &debug_frame, &range_names);
+            } else {
                 twice = true;
-                // look at the buffer one more time
-                continue;
-            }
-
-            if let Some(code) =
-                handle_syscall(&mut dap, &debug_frame, &range_names)?
-            {
-                return Ok(code);
             }
         }
     }
@@ -409,41 +396,34 @@ fn handle_syscall(
     dap: &mut Dap,
     debug_frame: &DebugFrame<EndianSlice<LittleEndian>>,
     range_names: &[(Range<u64>, String)],
-) -> Result<Option<i32>, anyhow::Error> {
-    if dap.is_halted()? {
-        const SYS_ABORT: u16 = 0xbeaa; // BKPT 0xAA
-        const SYS_EXCEPTION: u16 = 0xbeff; // BKPT 0xFF
-        const SYS_EXIT: u16 = 0xbeab; // BKPT 0xAB
+) -> Result<i32, anyhow::Error> {
+    const SYS_ABORT: u16 = 0xbeaa; // BKPT 0xAA
+    const SYS_EXCEPTION: u16 = 0xbeff; // BKPT 0xFF
+    const SYS_EXIT: u16 = 0xbeab; // BKPT 0xAB
 
-        let pc = dap.read_core_register(cortex_m::Register::PC)?;
-        let insn = dap.memory_read::<u16>(pc, 1)?[0];
+    let pc = dap.read_core_register(cortex_m::Register::PC)?;
+    let insn = dap.memory_read::<u16>(pc, 1)?[0];
 
-        match insn {
-            SYS_EXIT => {
-                let r0 = dap.read_core_register(cortex_m::Register::R0)?;
-                return Ok(Some(r0 as i32));
-            }
+    match insn {
+        SYS_EXIT => {
+            let r0 = dap.read_core_register(cortex_m::Register::R0)?;
+            Ok(r0 as i32)
+        }
 
-            SYS_EXCEPTION => {
-                return handle_exception(dap, debug_frame, range_names)
-                    .map(Some)
-            }
+        SYS_EXCEPTION => handle_exception(dap, debug_frame, range_names),
 
-            SYS_ABORT => {
-                let sp = dap.read_core_register(cortex_m::Register::SP)?;
-                let lr = dap.read_core_register(cortex_m::Register::LR)?;
-                backtrace(dap, debug_frame, range_names, lr, pc, sp)?;
-                return Ok(Some(134));
-            }
+        SYS_ABORT => {
+            let sp = dap.read_core_register(cortex_m::Register::SP)?;
+            let lr = dap.read_core_register(cortex_m::Register::LR)?;
+            backtrace(dap, debug_frame, range_names, lr, pc, sp)?;
+            Ok(134)
+        }
 
-            _ => {
-                error!("unknown instruction: {:#06x}", insn);
-                return Ok(Some(1));
-            }
+        _ => {
+            error!("unknown instruction: {:#06x}", insn);
+            Ok(1)
         }
     }
-
-    Ok(None)
 }
 
 fn backtrace(

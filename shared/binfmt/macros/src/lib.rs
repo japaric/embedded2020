@@ -1,4 +1,5 @@
 use proc_macro::TokenStream;
+use std::time::Instant;
 
 use proc_macro2::Span as Span2;
 use proc_macro_hack::proc_macro_hack;
@@ -30,21 +31,66 @@ pub fn debug(input: TokenStream) -> TokenStream {
         Data::Struct(data) => {
             let ident_s = ident.to_string();
 
-            let footprint = match data.fields {
+            let (tag, footprint) = match data.fields {
                 Fields::Named(fields) => {
-                    let mut fields_s = vec![];
-                    for field in &fields.named {
-                        let ident = field.ident.as_ref().expect("UNREACHABLE");
-                        let name = ident.to_string();
-                        let ty = &field.ty;
+                    // TODO implement bitfield compression for structs that
+                    // contain non-bool fields
+                    if fields.named.iter().all(|f| f.ty == parse_quote!(bool)) {
+                        let mut fields_s = vec![];
+                        let mut exprs = vec![];
+                        let n = fields.named.len();
+                        for (i, field) in fields.named.iter().enumerate() {
+                            let ident =
+                                field.ident.as_ref().expect("UNREACHABLE");
+                            let name = ident.to_string();
 
-                        fields_s.push(format!("{}: {{}}", name));
-                        stmts.push(quote!(
-                            <#ty as binfmt::binDebug>::fmt(&self.#ident, f)
-                        ));
+                            fields_s.push(format!("{}: {{{}}}", name, i));
+                            exprs.push(quote!(if self.#ident {{ 1 }} else {{ 0 }} << #i));
+                        }
+
+                        if n <= 8 {
+                            stmts.push(
+                                quote!(f.write(&u8::to_le_bytes(#(#exprs)|*))),
+                            );
+                        } else if n <= 16 {
+                            stmts.push(
+                                quote!(f.write(&u16::to_le_bytes(#(#exprs)|*))),
+                            );
+                        } else {
+                            todo!()
+                        }
+
+                        (
+                            quote!(Register),
+                            format!(
+                                "{} {{{{ {} }}}}",
+                                ident_s,
+                                fields_s.join(", ")
+                            ),
+                        )
+                    } else {
+                        let mut fields_s = vec![];
+                        for field in &fields.named {
+                            let ident =
+                                field.ident.as_ref().expect("UNREACHABLE");
+                            let name = ident.to_string();
+                            let ty = &field.ty;
+
+                            fields_s.push(format!("{}: {{}}", name));
+                            stmts.push(quote!(
+                                <#ty as binfmt::binDebug>::fmt(&self.#ident, f)
+                            ));
+                        }
+
+                        (
+                            quote!(Footprint),
+                            format!(
+                                "{} {{{{ {} }}}}",
+                                ident_s,
+                                fields_s.join(", ")
+                            ),
+                        )
                     }
-
-                    format!("{} {{{{ {} }}}}", ident_s, fields_s.join(", "))
                 }
 
                 Fields::Unnamed(fields) => {
@@ -59,10 +105,13 @@ pub fn debug(input: TokenStream) -> TokenStream {
                         ));
                     }
 
-                    format!("{}({})", ident_s, fields_s.join(", "))
+                    (
+                        quote!(Footprint),
+                        format!("{}({})", ident_s, fields_s.join(", ")),
+                    )
                 }
 
-                Fields::Unit => ident_s,
+                Fields::Unit => (quote!(Footprint), ident_s),
             };
 
             let section = format!(".binfmt.{}", footprint);
@@ -74,7 +123,7 @@ pub fn debug(input: TokenStream) -> TokenStream {
                         #[export_name = #footprint]
                         #[link_section = #section]
                         static SYM: u8 = 0;
-                        f.write_byte(binfmt::Tag::Footprint as u8);
+                        f.write_byte(binfmt::Tag::#tag as u8);
                         f.write_sym(&SYM);
                         #(#stmts;)*
                     }
@@ -100,12 +149,18 @@ fn write_(
     newline: bool,
     tag: bool,
 ) -> parse::Result<TokenStream> {
+    let start = Instant::now();
     let mut footprint = input.footprint.value();
+
+    let span = input.footprint.span();
+    if footprint.contains('@') {
+        return Err(parse::Error::new(span, "`@` character is not allowed"));
+    }
+
     if newline {
         footprint.push('\n');
     }
 
-    let span = input.footprint.span();
     let fargs = count_args(&footprint, span)?;
     let iargs = input.args.len();
 
@@ -120,6 +175,9 @@ fn write_(
     }
 
     let section = format!(".binfmt.{}", footprint);
+    let nanos = (Instant::now() - start).subsec_nanos();
+    // add random version to the symbol to avoid linker error due to duplicates
+    let footprint = format!("{}@{}", footprint, nanos);
     let tag = if tag {
         Some(quote!(<_ as binfmt::binWrite>::write_byte(
             __f__,

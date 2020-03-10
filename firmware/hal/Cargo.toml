@@ -9,6 +9,7 @@ version = "0.0.0"
 [dependencies]
 binfmt = { path = "../../shared/binfmt" }
 semidap = { path = "../semidap" }
+usbd = { path = "../../shared/usbd" }
 
 [dependencies.cm]
 features = ["DCB", "DWT", "NVIC"]

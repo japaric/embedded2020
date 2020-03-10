@@ -1,4 +1,6 @@
+use binfmt::derive::binDebug;
 use pac::{CLOCK, POWER, USBD};
+use usbd::State;
 
 use crate::errata;
 
@@ -7,6 +9,16 @@ const READY_POWER: u8 = 1 << 1;
 const READY_USB: u8 = 1 << 2;
 
 static mut READY: u8 = 0;
+static mut STATE: State = State::Default;
+
+#[allow(non_snake_case)]
+#[derive(binDebug)]
+struct PowerClockEvents {
+    USBDETECTED: bool,
+    USBREMOVED: bool,
+    USBPWRRDY: bool,
+    HFCLKSTARTED: bool,
+}
 
 #[allow(non_snake_case)]
 #[no_mangle]
@@ -23,11 +35,13 @@ fn POWER_CLOCK() {
         });
 
         semidap::trace!(
-            "USBDETECTED: {}, USBREMOVED: {}, USBPWRRDY: {}, HFCLKSTARTED: {}",
-            usbdetected,
-            usbremoved,
-            usbpwrrdy,
-            hfclkstarted,
+            "{}",
+            PowerClockEvents {
+                USBDETECTED: usbdetected != 0,
+                USBREMOVED: usbremoved != 0,
+                USBPWRRDY: usbpwrrdy != 0,
+                HFCLKSTARTED: hfclkstarted != 0,
+            }
         );
 
         if usbdetected != 0 {
@@ -69,34 +83,67 @@ fn POWER_CLOCK() {
     });
 }
 
+#[allow(non_snake_case)]
+#[derive(binDebug)]
+struct UsbdEvents {
+    USBRESET: bool,
+    STARTED: bool,
+    ENDEPIN0: bool,
+    EP0DATADONE: bool,
+    ENDEPOUT0: bool,
+    USBEVENT: bool,
+    EP0SETUP: bool,
+    EPDATA: bool,
+}
+
 // TODO enumeration
 #[allow(non_snake_case)]
 #[no_mangle]
 fn USBD() {
     // NOTE(unsafe) shared at the same priority level
     let ready = unsafe { &mut READY };
+    let state = unsafe { &mut STATE };
 
     USBD::borrow_unchecked(|usbd| {
-        let usbevent = usbd.EVENTS_USBEVENT.read().bits();
         let usbreset = usbd.EVENTS_USBRESET.read().bits();
         let started = usbd.EVENTS_STARTED.read().bits();
         let endepin0 = usbd.EVENTS_ENDEPIN0.read().bits();
         let ep0datadone = usbd.EVENTS_EP0DATADONE.read().bits();
         let endepout0 = usbd.EVENTS_ENDEPOUT0.read().bits();
+        let usbevent = usbd.EVENTS_USBEVENT.read().bits();
         let ep0setup = usbd.EVENTS_EP0SETUP.read().bits();
         let epdata = usbd.EVENTS_EPDATA.read().bits();
 
         semidap::trace!(
-            "USBRESET: {}, STARTED: {}, ENDEPIN0: {}, EP0DATADONE: {}, ENDEPOUT0: {}, USBEVENT: {}, EP0SETUP: {}, EPDATA: {}",
-            usbreset,
-            started,
-            endepin0,
-            ep0datadone,
-            endepout0,
-            usbevent,
-            ep0setup,
-            epdata,
+            "{}",
+            UsbdEvents {
+                USBRESET: usbreset != 0,
+                STARTED: started != 0,
+                ENDEPIN0: endepin0 != 0,
+                EP0DATADONE: ep0datadone != 0,
+                ENDEPOUT0: endepout0 != 0,
+                USBEVENT: usbevent != 0,
+                EP0SETUP: ep0setup != 0,
+                EPDATA: epdata != 0,
+            }
         );
+
+        if usbreset != 0 {
+            usbd.EVENTS_USBRESET.zero();
+            // TODO cancel transfers; etc
+            *state = State::Default;
+        }
+
+        if ep0setup != 0 {
+            semidap::info!(
+                "{}, {}",
+                usbd.BMREQUESTTYPE.read(),
+                usbd.BREQUEST.read()
+            );
+
+            // TODO
+            semidap::abort();
+        }
 
         if usbevent != 0 {
             usbd.EVENTS_USBEVENT.zero();
@@ -131,12 +178,10 @@ fn USBD() {
             }
         }
 
-        if usbreset != 0
-            || started != 0
+        if started != 0
             || endepin0 != 0
             || ep0datadone != 0
             || endepout0 != 0
-            || ep0setup != 0
             || epdata != 0
         {
             // TODO

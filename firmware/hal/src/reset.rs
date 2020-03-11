@@ -39,7 +39,6 @@ unsafe extern "C" fn Reset() {
         // enable interrupts
         usbd.INTENSET.write(|w| {
             w.USBRESET(1)
-                .STARTED(1)
                 .ENDEPIN0(1)
                 .EP0DATADONE(1)
                 .ENDEPOUT0(1)

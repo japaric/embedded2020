@@ -8,6 +8,7 @@ version = "0.0.0"
 
 [dependencies]
 binfmt = { path = "../../shared/binfmt" }
+consts = { path = "../../shared/consts" }
 semidap = { path = "../semidap" }
 usbd = { path = "../../shared/usbd" }
 

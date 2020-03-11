@@ -40,6 +40,7 @@ impl fmt::Display for Message<'_> {
 
 pub enum Node<'f> {
     Bytes(Vec<u8>),
+    CLikeEnum(&'f str, u8),
     F32(f32),
     Footprint(&'f str, Vec<Node<'f>>),
     I32(i32),
@@ -63,6 +64,10 @@ impl fmt::Display for Node<'_> {
                     write!(f, "{:#04x}", byte)?;
                 }
                 f.write_str("]")
+            }
+
+            Node::CLikeEnum(list, discr) => {
+                write!(f, "{}", list.split(',').nth((*discr).into()).unwrap())
             }
 
             Node::F32(val) => write!(f, "{}", val),
@@ -257,9 +262,19 @@ pub fn parse_node<'f>(
             let (len, i) = leb128_decode_u32(&bytes[consumed..])?;
             consumed += i;
             let len = len as usize;
-            let bytes = bytes.get(consumed..consumed + len as usize).ok_or(EoS)?;
+            let bytes =
+                bytes.get(consumed..consumed + len as usize).ok_or(EoS)?;
             consumed += len;
             Ok((Node::Bytes(bytes.to_owned()), consumed))
+        }
+
+        Tag::CLikeEnum => {
+            let (val, i) = leb128_decode_u32(&bytes[consumed..])?;
+            consumed += i;
+            let footprint = footprints[&val.into()];
+            let discr = bytes.get(consumed).ok_or(EoS)?;
+            consumed += 1;
+            Ok((Node::CLikeEnum(footprint, *discr), consumed))
         }
 
         Tag::F32 => {

@@ -27,11 +27,51 @@ pub fn debug(input: TokenStream) -> TokenStream {
 
     let mut stmts = vec![];
     let ident = &input.ident;
-    let ts = match input.data {
+    let (tag, footprint) = match input.data {
+        Data::Enum(data) => {
+            if data
+                .variants
+                .iter()
+                .all(|variant| variant.fields == Fields::Unit)
+                && data.variants.len() < 256
+            {
+                let mut variants = vec![];
+                let mut arms = vec![];
+                for (i, variant) in data.variants.iter().enumerate() {
+                    variants.push(variant.ident.to_string());
+                    let vident = &variant.ident;
+                    arms.push(quote!(#ident::#vident => #i as u8))
+                }
+
+                stmts.push(quote!(
+                    f.write_byte(match self { #(#arms),* });
+                ));
+
+                let footprint = variants.join(",");
+                (quote!(CLikeEnum), footprint)
+            } else {
+                return parse::Error::new(
+                    ident.span(),
+                    "this data type is not supported",
+                )
+                .to_compile_error()
+                .into();
+            }
+        }
+
+        Data::Union(_) => {
+            return parse::Error::new(
+                ident.span(),
+                "this data type is not supported",
+            )
+            .to_compile_error()
+            .into();
+        }
+
         Data::Struct(data) => {
             let ident_s = ident.to_string();
 
-            let (tag, footprint) = match data.fields {
+            match data.fields {
                 Fields::Named(fields) => {
                     // TODO implement bitfield compression for structs that
                     // contain non-bool fields
@@ -112,30 +152,26 @@ pub fn debug(input: TokenStream) -> TokenStream {
                 }
 
                 Fields::Unit => (quote!(Footprint), ident_s),
-            };
-
-            let section = format!(".binfmt.{}", footprint);
-            quote!(
-                impl #impl_generics binfmt::binDebug for #ident #ty_generics
-                    #where_clause
-                {
-                    fn fmt(&self, f: &mut impl binfmt::binWrite) {
-                        #[export_name = #footprint]
-                        #[link_section = #section]
-                        static SYM: u8 = 0;
-                        f.write_byte(binfmt::Tag::#tag as u8);
-                        f.write_sym(&SYM);
-                        #(#stmts;)*
-                    }
-                }
-
-            )
+            }
         }
-
-        _ => todo!(),
     };
 
-    ts.into()
+    let section = format!(".binfmt.{}", footprint);
+    quote!(
+        impl #impl_generics binfmt::binDebug for #ident #ty_generics
+            #where_clause
+        {
+            fn fmt(&self, f: &mut impl binfmt::binWrite) {
+                #[export_name = #footprint]
+                #[link_section = #section]
+                static SYM: u8 = 0;
+                f.write_byte(binfmt::Tag::#tag as u8);
+                f.write_sym(&SYM);
+                #(#stmts;)*
+            }
+        }
+    )
+    .into()
 }
 
 #[proc_macro_hack]

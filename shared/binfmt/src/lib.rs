@@ -44,6 +44,7 @@ u8_enum! {
     Pointer = 9,
     Register = 10,
     Bytes = 11,
+    CLikeEnum = 12,
 }
 
 #[repr(u8)]

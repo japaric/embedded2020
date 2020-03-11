@@ -5,3 +5,6 @@ license = "MIT OR Apache-2.0"
 name = "usbd"
 publish = false
 version = "0.0.0"
+
+[dependencies]
+binfmt = { path = "../binfmt" }

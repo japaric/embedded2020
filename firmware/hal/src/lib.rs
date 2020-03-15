@@ -23,8 +23,7 @@ pub fn cyccnt() -> u32 {
 pub fn deviceid() -> u64 {
     // NOTE(borrow_unchecked) read-only registers
     FICR::borrow_unchecked(|ficr| {
-        u64::from(ficr.DEVICEID0.read().bits())
-            | u64::from(ficr.DEVICEID1.read().bits()) << 32
+        u64::from(ficr.DEVICEID0.read().bits()) | u64::from(ficr.DEVICEID1.read().bits()) << 32
     })
 }
 

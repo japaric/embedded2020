@@ -164,9 +164,7 @@ const CAPACITY: u16 = 16 * HID_PACKET_SIZE as u16;
 static mut SEMIDAP_CURSOR: [Cell<u16>; 2] = [Cell::new(0), Cell::new(0)];
 #[link_section = ".uninit.SEMIDAP_BUFFER"]
 #[no_mangle]
-static mut SEMIDAP_BUFFER: [UnsafeCell<
-    MaybeUninit<[u8; 2 * CAPACITY as usize]>,
->; 2] = [
+static mut SEMIDAP_BUFFER: [UnsafeCell<MaybeUninit<[u8; 2 * CAPACITY as usize]>>; 2] = [
     UnsafeCell::new(MaybeUninit::uninit()),
     UnsafeCell::new(MaybeUninit::uninit()),
 ];
@@ -224,13 +222,7 @@ impl Channel {
             }
         } else {
             // single memcpy
-            unsafe {
-                memcpy(
-                    bytes.as_ptr(),
-                    self.bufferp.add(cursor.into()),
-                    len.into(),
-                )
-            }
+            unsafe { memcpy(bytes.as_ptr(), self.bufferp.add(cursor.into()), len.into()) }
         }
 
         // NOTE we want the `write` cursor to always be updated after `bufferp`.

@@ -38,9 +38,7 @@ impl ops::Sub for Instant {
         // 4)`. Doing the operation this way we can stick to 32-bit arithmetic
         // without overflowing the value at any stage
         let nanos =
-            (((ticks % 32768).wrapping_mul(78125) >> 2).wrapping_mul(5) >> 2)
-                .wrapping_mul(5)
-                >> 2;
+            (((ticks % 32768).wrapping_mul(78125) >> 2).wrapping_mul(5) >> 2).wrapping_mul(5) >> 2;
         Duration::new(secs.into(), nanos)
     }
 }

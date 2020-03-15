@@ -34,8 +34,7 @@ const DEVICE_DESC: device::Desc = device::Desc {
     idVendor: consts::VID,
 };
 
-const FULL_CONFIG_SIZE: u8 =
-    config::Desc::SIZE + iface::Desc::SIZE + 2 * ep::Desc::SIZE;
+const FULL_CONFIG_SIZE: u8 = config::Desc::SIZE + iface::Desc::SIZE + 2 * ep::Desc::SIZE;
 
 const CONFIG_DESC: config::Desc = config::Desc {
     // XXX configuration value 0 is reserved (?) and means "not configured"
@@ -80,6 +79,9 @@ const EP1OUT_DESC: ep::Desc = ep::Desc {
     wMaxPacketSize: ep::wMaxPacketSize::BulkControl { size: 64 },
 };
 
+static STRINGS: &[&str] = &[];
+const LANG_ID: u16 = 1033; // en-us
+
 /// Puts together a configuration descriptor and its interface and endpoint
 /// descriptors in a single packet
 fn full_config() -> [u8; FULL_CONFIG_SIZE as usize] {
@@ -107,8 +109,7 @@ static mut READY: Cell<u8> = Cell::new(0);
 
 static mut STATE: Cell<State> = Cell::new(State::Default);
 #[link_section = ".uninit.EP0BUFFER"]
-static mut EP0BUFFER: UnsafeCell<MaybeUninit<[u8; 64]>> =
-    UnsafeCell::new(MaybeUninit::uninit());
+static mut EP0BUFFER: UnsafeCell<MaybeUninit<[u8; 64]>> = UnsafeCell::new(MaybeUninit::uninit());
 static mut EP0BUFFER_IN_USE: Cell<bool> = Cell::new(false);
 
 #[allow(non_snake_case)]
@@ -130,9 +131,7 @@ fn POWER_CLOCK() {
         let usbdetected = power.EVENTS_USBDETECTED.read().bits();
         let usbremoved = power.EVENTS_USBREMOVED.read().bits();
         let usbpwrrdy = power.EVENTS_USBPWRRDY.read().bits();
-        let hfclkstarted = CLOCK::borrow_unchecked(|clock| {
-            clock.EVENTS_HFCLKSTARTED.read().bits()
-        });
+        let hfclkstarted = CLOCK::borrow_unchecked(|clock| clock.EVENTS_HFCLKSTARTED.read().bits());
 
         semidap::trace!(
             "{}",
@@ -272,14 +271,10 @@ fn USBD() {
                         );
 
                         match desc_type {
-                            DescriptorType::CONFIGURATION
-                                if language_id == 0 =>
-                            {
+                            DescriptorType::CONFIGURATION if language_id == 0 => {
                                 let full_config_desc;
                                 let config_desc;
-                                let bytes = if wlength
-                                    == u16::from(config::Desc::SIZE)
-                                {
+                                let bytes = if wlength == u16::from(config::Desc::SIZE) {
                                     config_desc = CONFIG_DESC.bytes();
                                     &config_desc[..]
                                 } else {
@@ -288,12 +283,9 @@ fn USBD() {
                                 };
                                 let desc_len = bytes.len();
 
-                                if desc_len
-                                    <= DEVICE_DESC.bMaxPacketSize0 as usize
-                                {
+                                if desc_len <= DEVICE_DESC.bMaxPacketSize0 as usize {
                                     // done in a single transfer
-                                    usbd.SHORTS
-                                        .rmw(|_, w| w.EP0DATADONE_EP0STATUS(1));
+                                    usbd.SHORTS.rmw(|_, w| w.EP0DATADONE_EP0STATUS(1));
                                 } else {
                                     unimplemented(usbd)
                                 }
@@ -301,8 +293,7 @@ fn USBD() {
                                 let tlen = cmp::min(
                                     cmp::min(desc_len as u16, wlength),
                                     DEVICE_DESC.bMaxPacketSize0 as u16,
-                                )
-                                    as u8;
+                                ) as u8;
 
                                 semidap::info!("sending {}B of data", tlen);
 
@@ -324,10 +315,9 @@ fn USBD() {
                                 let bytes = DEVICE_DESC.bytes();
                                 let desc_len = bytes.len();
 
-                                if desc_len <= wlength.into() {
+                                if desc_len <= DEVICE_DESC.bMaxPacketSize0 as usize {
                                     // done in a single transfer
-                                    usbd.SHORTS
-                                        .rmw(|_, w| w.EP0DATADONE_EP0STATUS(1));
+                                    usbd.SHORTS.rmw(|_, w| w.EP0DATADONE_EP0STATUS(1));
                                 } else {
                                     unimplemented(usbd)
                                 }
@@ -335,8 +325,7 @@ fn USBD() {
                                 let tlen = cmp::min(
                                     cmp::min(desc_len as u16, wlength),
                                     DEVICE_DESC.bMaxPacketSize0 as u16,
-                                )
-                                    as u8;
+                                ) as u8;
 
                                 semidap::info!("sending {}B of data", tlen);
 
@@ -350,15 +339,87 @@ fn USBD() {
                                 }
                             }
 
+                            DescriptorType::STRING if !ep0buffer_in_use.get() => {
+                                if desc_index == 0 {
+                                    // respond with supported LANGIDs
+                                    let bytes = [
+                                        4,
+                                        DescriptorType::STRING as u8,
+                                        LANG_ID as u8,
+                                        (LANG_ID >> 8) as u8,
+                                    ];
+
+                                    let desc_len = bytes.len();
+
+                                    if desc_len <= DEVICE_DESC.bMaxPacketSize0 as usize {
+                                        // done in a single transfer
+                                        usbd.SHORTS.rmw(|_, w| w.EP0DATADONE_EP0STATUS(1));
+                                    } else {
+                                        unimplemented(usbd)
+                                    }
+
+                                    let tlen = cmp::min(
+                                        cmp::min(desc_len as u16, wlength),
+                                        DEVICE_DESC.bMaxPacketSize0 as u16,
+                                    ) as u8;
+
+                                    semidap::info!("sending {}B of data", tlen);
+
+                                    unsafe {
+                                        ptr::copy_nonoverlapping(
+                                            bytes.as_ptr(),
+                                            ep0buffer,
+                                            tlen.into(),
+                                        );
+                                        epin0(usbd, ep0buffer, tlen);
+                                    }
+                                } else if let Some(string) = if language_id == LANG_ID {
+                                    STRINGS.get(usize::from(desc_index - 1))
+                                } else {
+                                    None
+                                } {
+                                    let slen = string.chars().count() * 2;
+                                    let desc_len = slen + 2;
+
+                                    if desc_len <= DEVICE_DESC.bMaxPacketSize0 as usize {
+                                        // done in a single transfer
+                                        usbd.SHORTS.rmw(|_, w| w.EP0DATADONE_EP0STATUS(1));
+                                    } else {
+                                        unimplemented(usbd)
+                                    }
+
+                                    let tlen = cmp::min(
+                                        cmp::min(desc_len as u16, wlength),
+                                        DEVICE_DESC.bMaxPacketSize0 as u16,
+                                    ) as u8;
+
+                                    semidap::info!("sending {}B of data", tlen);
+
+                                    unsafe {
+                                        ep0buffer.write(tlen);
+                                        ep0buffer.add(1).write(DescriptorType::STRING as u8);
+                                        let mut pos = 2;
+                                        // NOTE USB uses UTF-16LE
+                                        string.chars().for_each(|c| {
+                                            let word = c as u16;
+                                            ep0buffer.add(pos).write(word as u8);
+                                            ep0buffer.add(pos + 1).write((word >> 8) as u8);
+                                            pos += 2;
+                                        });
+                                        epin0(usbd, ep0buffer, tlen);
+                                    }
+                                } else {
+                                    stall0(usbd)
+                                }
+                            }
+
                             // not supported; we are a full-speed device
                             DescriptorType::DEVICE_QUALIFIER => stall0(usbd),
 
                             _ => unimplemented(usbd),
                         }
                     } else {
-                        semidap::error!(
-                            "GET_DESCRIPTOR with invalid descriptor type"
-                        );
+                        semidap::error!("GET_DESCRIPTOR with invalid descriptor type");
                         // XXX are we supposed to STALL or remain idle on
                         // invalid input?
                         stall0(usbd)
@@ -392,8 +453,9 @@ fn USBD() {
                     let wlength = u16::from(usbd.WLENGTHL.read().bits())
                         | (u16::from(usbd.WLENGTHH.read().bits()) << 8);
 
-                    if valuel == 1 && valueh == 0 && windex == 0 && wlength == 0
-                    {
+                    semidap::info!("SET_CONFIGURATION {}", valuel);
+
+                    if valuel == 1 && valueh == 0 && windex == 0 && wlength == 0 {
                         state.set(State::Configured {
                             configuration: valuel,
                         });

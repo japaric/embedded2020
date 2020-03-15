@@ -10,20 +10,25 @@ use core::convert::TryFrom;
 
 use binfmt::derive::binDebug;
 
+pub mod config;
+pub mod device;
+pub mod ep;
+pub mod iface;
+
 #[derive(binDebug, Clone, Copy, PartialEq)]
 pub enum Direction {
-    /// Device-to-Host
-    IN,
-
     /// Host-to-Device
-    OUT,
+    OUT = 0,
+
+    /// Device-to-Host
+    IN = 1,
 }
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum State {
     Default,
     Address,
-    Configured,
+    Configured { configuration: u8 },
 }
 
 // see table 9-4 Standard Request Codes
@@ -93,69 +98,5 @@ impl TryFrom<u8> for DescriptorType {
             8 => DescriptorType::INTERFACE_POWER,
             _ => return Err(()),
         })
-    }
-}
-
-/// Standard Device Descriptor
-#[allow(non_snake_case)]
-#[derive(Clone, Copy)]
-pub struct DeviceDesc {
-    // pub blength: u8,
-    // pub bDescriptorType: u8,
-    pub bcdUSB: bcdUSB,
-    pub bDeviceClass: u8,
-    pub bDeviceSubClass: u8,
-    pub bDeviceProtocol: u8,
-    pub bMaxPacketSize0: bMaxPacketSize0,
-    pub idVendor: u16,
-    pub idProduct: u16,
-    pub bcdDevice: u16,
-    pub iManufacturer: u8,
-    pub iProduct: u8,
-    pub iSerialNumber: u8,
-    pub bNumConfigurations: u8,
-}
-
-#[allow(non_camel_case_types)]
-#[derive(Clone, Copy)]
-pub enum bcdUSB {
-    /// 2.0
-    V20 = 0x0200,
-    // TODO(?) other versions
-}
-
-#[allow(non_camel_case_types)]
-#[derive(Clone, Copy)]
-pub enum bMaxPacketSize0 {
-    B8 = 8,
-    B16 = 16,
-    B32 = 32,
-    B64 = 64,
-}
-
-const DEVICE_DESC_SZ: u8 = 18;
-
-impl DeviceDesc {
-    pub fn bytes(&self) -> [u8; DEVICE_DESC_SZ as usize] {
-        [
-            DEVICE_DESC_SZ,
-            DescriptorType::DEVICE as u8,
-            self.bcdUSB as u16 as u8,
-            (self.bcdUSB as u16 >> 8) as u8,
-            self.bDeviceClass,
-            self.bDeviceSubClass,
-            self.bDeviceProtocol,
-            self.bMaxPacketSize0 as u8,
-            self.idVendor as u8,
-            (self.idVendor >> 8) as u8,
-            self.idProduct as u8,
-            (self.idProduct >> 8) as u8,
-            self.bcdDevice as u8,
-            (self.bcdDevice >> 8) as u8,
-            self.iManufacturer,
-            self.iProduct,
-            self.iSerialNumber,
-            self.bNumConfigurations,
-        ]
     }
 }

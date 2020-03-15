@@ -158,7 +158,7 @@ pub fn stdout() -> Channel {
 
 // TODO(?) change this to the *usable* size of one HID packet
 const HID_PACKET_SIZE: u8 = 64;
-const CAPACITY: u16 = 8 * HID_PACKET_SIZE as u16;
+const CAPACITY: u16 = 16 * HID_PACKET_SIZE as u16;
 
 #[no_mangle]
 static mut SEMIDAP_CURSOR: [Cell<u16>; 2] = [Cell::new(0), Cell::new(0)];

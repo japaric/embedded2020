@@ -10,12 +10,14 @@ use core::{
 use binfmt::derive::binDebug;
 use pac::{CLOCK, POWER, USBD};
 use usbd::{
-    bMaxPacketSize0, bRequest, bcdUSB, DescriptorType, DeviceDesc, State,
+    bRequest, config,
+    device::{self, bMaxPacketSize0, bcdUSB},
+    ep, iface, DescriptorType, Direction, State,
 };
 
 use crate::errata;
 
-const DEVICE_DESC: DeviceDesc = DeviceDesc {
+const DEVICE_DESC: device::Desc = device::Desc {
     // Interface Association Descriptor
     bDeviceClass: 239,
     bDeviceSubClass: 2,
@@ -31,6 +33,72 @@ const DEVICE_DESC: DeviceDesc = DeviceDesc {
     idProduct: consts::PID,
     idVendor: consts::VID,
 };
+
+const FULL_CONFIG_SIZE: u8 =
+    config::Desc::SIZE + iface::Desc::SIZE + 2 * ep::Desc::SIZE;
+
+const CONFIG_DESC: config::Desc = config::Desc {
+    // XXX configuration value 0 is reserved (?) and means "not configured"
+    bConfigurationValue: 1,
+    bMaxPower: 50, // 100 mA
+    bNumInterfaces: 1,
+    bmAttributes: config::bmAttributes {
+        remote_wakeup: false,
+        self_powered: true,
+    },
+    iConfiguration: 0,
+    wTotalLength: FULL_CONFIG_SIZE as u16,
+};
+
+const IFACE_DESC: iface::Desc = iface::Desc {
+    bAlternativeSetting: 0,
+    bInterfaceClass: 10,
+    bInterfaceNumber: 0,
+    bInterfaceProtocol: 0,
+    bInterfaceSubClass: 0,
+    bNumEndpoints: 2,
+    iInterface: 0,
+};
+
+const EP1IN_DESC: ep::Desc = ep::Desc {
+    bEndpointAddress: ep::Address {
+        direction: Direction::IN,
+        number: 1,
+    },
+    bInterval: 0,
+    bmAttributes: ep::bmAttributes::Bulk,
+    wMaxPacketSize: ep::wMaxPacketSize::BulkControl { size: 64 },
+};
+
+const EP1OUT_DESC: ep::Desc = ep::Desc {
+    bEndpointAddress: ep::Address {
+        direction: Direction::OUT,
+        number: 1,
+    },
+    bInterval: 0,
+    bmAttributes: ep::bmAttributes::Bulk,
+    wMaxPacketSize: ep::wMaxPacketSize::BulkControl { size: 64 },
+};
+
+/// Puts together a configuration descriptor and its interface and endpoint
+/// descriptors in a single packet
+fn full_config() -> [u8; FULL_CONFIG_SIZE as usize] {
+    let mut out = [0; FULL_CONFIG_SIZE as usize];
+
+    let mut pos = 0;
+    let mut push = |bytes: &[u8]| {
+        let len = bytes.len();
+        out[pos..pos + len].copy_from_slice(bytes);
+        pos += len;
+    };
+
+    push(&CONFIG_DESC.bytes());
+    push(&IFACE_DESC.bytes());
+    push(&EP1IN_DESC.bytes());
+    push(&EP1OUT_DESC.bytes());
+
+    out
+}
 
 const READY_CLOCK: u8 = 1;
 const READY_POWER: u8 = 1 << 1;
@@ -185,6 +253,8 @@ fn USBD() {
 
             match (bmrequesttype.bits(), bRequest::from(brequest.bits())) {
                 (0b1000_0000, bRequest::GET_DESCRIPTOR) => {
+                    // control read transfer
+
                     let desc_type = usbd.WVALUEH.read().bits();
                     let desc_index = usbd.WVALUEL.read().bits();
                     let language_id = u16::from(usbd.WINDEXL.read().bits())
@@ -202,12 +272,55 @@ fn USBD() {
                         );
 
                         match desc_type {
+                            DescriptorType::CONFIGURATION
+                                if language_id == 0 =>
+                            {
+                                let full_config_desc;
+                                let config_desc;
+                                let bytes = if wlength
+                                    == u16::from(config::Desc::SIZE)
+                                {
+                                    config_desc = CONFIG_DESC.bytes();
+                                    &config_desc[..]
+                                } else {
+                                    full_config_desc = full_config();
+                                    &full_config_desc[..]
+                                };
+                                let desc_len = bytes.len();
+
+                                if desc_len
+                                    <= DEVICE_DESC.bMaxPacketSize0 as usize
+                                {
+                                    // done in a single transfer
+                                    usbd.SHORTS
+                                        .rmw(|_, w| w.EP0DATADONE_EP0STATUS(1));
+                                } else {
+                                    unimplemented(usbd)
+                                }
+
+                                let tlen = cmp::min(
+                                    cmp::min(desc_len as u16, wlength),
+                                    DEVICE_DESC.bMaxPacketSize0 as u16,
+                                )
+                                    as u8;
+
+                                semidap::info!("sending {}B of data", tlen);
+
+                                unsafe {
+                                    ptr::copy_nonoverlapping(
+                                        bytes.as_ptr(),
+                                        ep0buffer,
+                                        tlen.into(),
+                                    );
+                                    epin0(usbd, ep0buffer, tlen);
+                                }
+                            }
+
                             DescriptorType::DEVICE
                                 if desc_index == 0
                                     && language_id == 0
                                     && !ep0buffer_in_use.get() =>
                             {
-                                // control read transfer
                                 let bytes = DEVICE_DESC.bytes();
                                 let desc_len = bytes.len();
 
@@ -215,13 +328,8 @@ fn USBD() {
                                     // done in a single transfer
                                     usbd.SHORTS
                                         .rmw(|_, w| w.EP0DATADONE_EP0STATUS(1));
-
-                                    if desc_len
-                                        == DEVICE_DESC.bMaxPacketSize0 as usize
-                                    {
-                                        // short packet required
-                                        unimplemented(usbd)
-                                    }
+                                } else {
+                                    unimplemented(usbd)
                                 }
 
                                 let tlen = cmp::min(
@@ -271,6 +379,29 @@ fn USBD() {
                         state.set(State::Address);
                         semidap::info!("SET_ADDRESS {}", addr);
                     } else {
+                        // invalid request
+                        stall0(usbd)
+                    }
+                }
+
+                (0, bRequest::SET_CONFIGURATION) => {
+                    let valuel = usbd.WVALUEL.read().bits();
+                    let valueh = usbd.WVALUEH.read().bits();
+                    let windex = u16::from(usbd.WINDEXL.read().bits())
+                        | (u16::from(usbd.WINDEXH.read().bits()) << 8);
+                    let wlength = u16::from(usbd.WLENGTHL.read().bits())
+                        | (u16::from(usbd.WLENGTHH.read().bits()) << 8);
+
+                    if valuel == 1 && valueh == 0 && windex == 0 && wlength == 0
+                    {
+                        state.set(State::Configured {
+                            configuration: valuel,
+                        });
+
+                        // no data transfer; issue a status stage
+                        usbd.TASKS_EP0STATUS.write(|w| w.TASKS_EP0STATUS(1));
+                    } else {
+                        // invalid request
                         stall0(usbd)
                     }
                 }

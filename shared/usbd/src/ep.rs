@@ -37,7 +37,6 @@ pub struct Address {
 
 impl Address {
     fn byte(&self) -> u8 {
-        assert!(self.number <= 0b1111);
         (self.number & 0b1111) | (self.direction as u8) << 7
     }
 }
@@ -63,10 +62,7 @@ impl bmAttributes {
             bmAttributes::Isochronous {
                 synchronization_type,
                 usage_type,
-            } => {
-                0b01 | (*synchronization_type as u8) << 2
-                    | (*usage_type as u8) << 4
-            }
+            } => 0b01 | (*synchronization_type as u8) << 2 | (*usage_type as u8) << 4,
         }
     }
 }
@@ -98,11 +94,14 @@ pub enum UsageType {
 #[derive(Clone, Copy)]
 pub enum wMaxPacketSize {
     BulkControl {
+        /// Must be less than `1 << 11`
         size: u16,
     },
 
     IsochronousInterrupt {
+        /// Must be less than `1 << 11`
         size: u16,
+        /// Must be less than `4`
         transactions_per_microframe: u8,
     },
 }
@@ -110,19 +109,12 @@ pub enum wMaxPacketSize {
 impl wMaxPacketSize {
     fn word(&self) -> u16 {
         match self {
-            wMaxPacketSize::BulkControl { size } => {
-                assert!(*size < (1 << 11));
-                *size
-            }
+            wMaxPacketSize::BulkControl { size } => *size & ((1 << 11) - 1),
 
             wMaxPacketSize::IsochronousInterrupt {
                 size,
                 transactions_per_microframe,
-            } => {
-                assert!(*size < (1 << 11));
-                assert!(*transactions_per_microframe < 4);
-                *size | (u16::from(*transactions_per_microframe) << 11)
-            }
+            } => (*size & ((1 << 11) - 1)) | (u16::from(*transactions_per_microframe & 0b11) << 11),
         }
     }
 }

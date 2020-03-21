@@ -79,6 +79,7 @@ const EP1OUT_DESC: ep::Desc = ep::Desc {
     wMaxPacketSize: ep::wMaxPacketSize::BulkControl { size: 64 },
 };
 
+// String descriptors
 static STRINGS: &[&str] = &[];
 const LANG_ID: u16 = 1033; // en-us
 
@@ -90,7 +91,10 @@ fn full_config() -> [u8; FULL_CONFIG_SIZE as usize] {
     let mut pos = 0;
     let mut push = |bytes: &[u8]| {
         let len = bytes.len();
-        out[pos..pos + len].copy_from_slice(bytes);
+        // NOTE(unsafe) avoid (unreachable) panicking branches: the buffer is big enough
+        unsafe {
+            out.get_unchecked_mut(pos..pos + len).copy_from_slice(bytes);
+        }
         pos += len;
     };
 

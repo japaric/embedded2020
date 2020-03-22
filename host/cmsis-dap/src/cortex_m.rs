@@ -110,19 +110,12 @@ impl crate::Dap {
         Ok(if self.debugen != Some(false) {
             false
         } else {
-            dhcsr::R::from(
-                self.memory_read_word(DHCSR::address() as usize as u32)?,
-            )
-            .C_HALT()
-                != 0
+            dhcsr::R::from(self.memory_read_word(DHCSR::address() as usize as u32)?).C_HALT() != 0
         })
     }
 
     /// [ARM Cortex-M] Reads the specified target's core register
-    pub fn read_core_register(
-        &mut self,
-        reg: Register,
-    ) -> Result<u32, anyhow::Error> {
+    pub fn read_core_register(&mut self, reg: Register) -> Result<u32, anyhow::Error> {
         const READ: u8 = 0;
 
         info!("reading Cortex-M register {:?} ... ", reg);
@@ -131,9 +124,7 @@ impl crate::Dap {
         w.REGWnR(READ).REGSEL(reg.regsel());
         self.memory_write_word(DCRSR::address() as usize as u32, w.into())?;
 
-        let dhcsr = dhcsr::R::from(
-            self.memory_read_word(DHCSR::address() as usize as u32)?,
-        );
+        let dhcsr = dhcsr::R::from(self.memory_read_word(DHCSR::address() as usize as u32)?);
         while dhcsr.S_REGRDY() == 0 {
             self.brief_sleep();
         }
@@ -155,8 +146,7 @@ impl crate::Dap {
         self.set_debugen()?;
 
         let addr = AIRCR::address() as usize as u32;
-        let mut w =
-            aircr::W::from(aircr::R::from(self.memory_read_word(addr)?));
+        let mut w = aircr::W::from(aircr::R::from(self.memory_read_word(addr)?));
         // let ro_mask =
         // (u32::from(u16::max_value()) << 16) | (1 << 15) | (0b111 << 8);
         w.VECTKEY(VECTKEY).SYSRESETREQ(1);

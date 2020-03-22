@@ -3,9 +3,7 @@
 //! - (TRM) Cortex-M4 r0p0 Technical Reference Manual (ARM DDI 0439B)
 //! - (ARM) ARMv7-M Architecture Reference Manual (ARM DDI 0403E.b)
 
-use crate::ir::{
-    Access, Bitfield, Device, Instances, Peripheral, Register, Width,
-};
+use crate::ir::{Access, Bitfield, Device, Instances, Peripheral, Register, Width};
 
 pub fn device() -> Device<'static> {
     Device {
@@ -114,9 +112,7 @@ fn peripherals() -> Vec<Peripheral<'static>> {
                         access: Access::ReadWrite {
                             unsafe_write: false,
                         },
-                        description: Some(
-                            "Debug Halting Control and Status Register".into(),
-                        ),
+                        description: Some("Debug Halting Control and Status Register".into()),
                         name: "DHCSR".into(),
                         offset: 0x00,
                         r_fields,
@@ -143,9 +139,7 @@ fn peripherals() -> Vec<Peripheral<'static>> {
                         access: Access::WriteOnly {
                             unsafe_write: false,
                         },
-                        description: Some(
-                            "Debug Core Register Selector Register".into(),
-                        ),
+                        description: Some("Debug Core Register Selector Register".into()),
                         name: "DCRSR".into(),
                         offset: 0x04,
                         r_fields: vec![],
@@ -156,9 +150,7 @@ fn peripherals() -> Vec<Peripheral<'static>> {
                 {
                     Register {
                         access: Access::ReadWrite { unsafe_write: true },
-                        description: Some(
-                            "Debug Core Register Data Register".into(),
-                        ),
+                        description: Some("Debug Core Register Data Register".into()),
                         name: "DCRDR".into(),
                         offset: 0x08,
                         r_fields: vec![],
@@ -255,10 +247,7 @@ fn peripherals() -> Vec<Peripheral<'static>> {
                         access: Access::ReadWrite {
                             unsafe_write: false,
                         },
-                        description: Some(
-                            "Debug Exception and Monitor Control Register"
-                                .into(),
-                        ),
+                        description: Some("Debug Exception and Monitor Control Register".into()),
                         name: "DEMCR".into(),
                         offset: 0x0c,
                         r_fields: fields.clone(),
@@ -279,7 +268,8 @@ fn peripherals() -> Vec<Peripheral<'static>> {
                     let mut w_fields = vec![];
                     w_fields.push(Bitfield {
                         description: Some(
-                            "Enables the cycle counter.\n0: Counter disabled.\n1: Counter enabled.".into(),
+                            "Enables the cycle counter.\n0: Counter disabled.\n1: Counter enabled."
+                                .into(),
                         ),
                         name: "CYCCNTENA".into(),
                         offset: 0,
@@ -570,9 +560,7 @@ fn peripherals() -> Vec<Peripheral<'static>> {
                         access: Access::ReadWrite {
                             unsafe_write: false,
                         },
-                        description: Some(
-                            "Interrupt Control and State Register".into(),
-                        ),
+                        description: Some("Interrupt Control and State Register".into()),
                         name: "ICSR".into(),
                         offset: 0x4,
                         r_fields,
@@ -591,9 +579,7 @@ fn peripherals() -> Vec<Peripheral<'static>> {
                     // section B3.2.5 of (ARM)
                     Register {
                         access: Access::ReadWrite { unsafe_write: true },
-                        description: Some(
-                            "Vector Table Offset Register".into(),
-                        ),
+                        description: Some("Vector Table Offset Register".into()),
                         name: "VTOR".into(),
                         offset: 0x8,
                         r_fields: fields.clone(),
@@ -655,8 +641,7 @@ fn peripherals() -> Vec<Peripheral<'static>> {
                             unsafe_write: false,
                         },
                         description: Some(
-                            "Application Interrupt and Reset Control Register"
-                                .into(),
+                            "Application Interrupt and Reset Control Register".into(),
                         ),
                         name: "AIRCR".into(),
                         offset: 0xc,

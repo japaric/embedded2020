@@ -150,8 +150,7 @@ impl crate::Dap {
 /// SWJ sequence to switch from JTAG mode to SWD mode
 pub static JTAG_TO_SWD_SWJ_SEQUENCE: &[u8] = &[
     // at least 50 cycles of SWDIO/TMS high
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, // 16-bit JTAG-to-SWD select sequence
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // 16-bit JTAG-to-SWD select sequence
     0x9e, 0xe7, //
     // at least 50 cycles of SWDIO/TMS high
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -264,11 +263,7 @@ impl adiv5::Register {
 
 impl crate::Dap {
     /// Pushes a DAP transfer request into the internal buffer
-    pub fn push_dap_transfer_request(
-        &mut self,
-        reg: adiv5::Register,
-        req: Request,
-    ) {
+    pub fn push_dap_transfer_request(&mut self, reg: adiv5::Register, req: Request) {
         const CMD: Command = Command::DAP_Transfer;
 
         // change bank, if required
@@ -280,8 +275,7 @@ impl crate::Dap {
                             adiv5::Register::DP_SELECT,
                             Request::Write(
                                 adiv5::DP_SELECT_APSEL_AHB_AP
-                                    | (u32::from(n)
-                                        << adiv5::DP_SELECT_APBANKSEL_OFFSET),
+                                    | (u32::from(n) << adiv5::DP_SELECT_APBANKSEL_OFFSET),
                             ),
                         );
 
@@ -343,10 +337,7 @@ impl crate::Dap {
 
         let resp = self.hid_read(RHS + 4 * u16::from(read_requests))?;
 
-        if resp[0] != CMD
-            || resp[1] != total_requests
-            || resp[2] != TRANSFER_ACK_OK
-        {
+        if resp[0] != CMD || resp[1] != total_requests || resp[2] != TRANSFER_ACK_OK {
             return Err(anyhow!("`{:?}` failed (resp = {:?})", CMD, resp));
         }
 
@@ -385,10 +376,7 @@ impl crate::Dap {
 
         let resp = self.hid_read(RHS + count * u32::BYTES)?;
 
-        if resp[0] != CMD
-            || resp[1..3] != count.to_le_bytes()[..]
-            || resp[3] != TRANSFER_ACK_OK
-        {
+        if resp[0] != CMD || resp[1..3] != count.to_le_bytes()[..] || resp[3] != TRANSFER_ACK_OK {
             return Err(anyhow!("`{:?}` failed", CMD));
         }
 
@@ -424,10 +412,7 @@ impl crate::Dap {
 
         let resp = self.hid_read(RHS)?;
 
-        if resp[0] != CMD
-            || resp[1..3] != count.to_le_bytes()[..]
-            || resp[3] != TRANSFER_ACK_OK
-        {
+        if resp[0] != CMD || resp[1..3] != count.to_le_bytes()[..] || resp[3] != TRANSFER_ACK_OK {
             return Err(anyhow!("`{:?}` failed", CMD));
         }
 

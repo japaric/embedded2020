@@ -28,8 +28,7 @@ unsafe extern "C" fn Reset() -> ! {
         p0.OUTCLR.write(|w| w.PIN14(1));
     });
 
-    let new_vtor: *mut [usize; ENTRIES] =
-        (RAM_END - ENTRIES * mem::size_of::<u32>()) as *mut _;
+    let new_vtor: *mut [usize; ENTRIES] = (RAM_END - ENTRIES * mem::size_of::<u32>()) as *mut _;
     let vectors = &*new_vtor;
     let initial_sp = vectors[0];
 
@@ -50,9 +49,7 @@ unsafe extern "C" fn Reset() -> ! {
             }
         })
     {
-        SCB::borrow_unchecked(|scb| {
-            scb.VTOR.write(|w| w.TBLOFF(new_vtor as u32 >> 7))
-        });
+        SCB::borrow_unchecked(|scb| scb.VTOR.write(|w| w.TBLOFF(new_vtor as u32 >> 7)));
 
         P0::borrow_unchecked(|p0| {
             // all LEDs off

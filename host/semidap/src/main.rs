@@ -23,8 +23,7 @@ use cm::scb::{cpuid, CPUID};
 use cmsis_dap::{cortex_m, Dap};
 use gimli::{
     read::{CfaRule, DebugFrame, UnwindSection},
-    BaseAddresses, EndianSlice, LittleEndian, RegisterRule,
-    UninitializedUnwindContext,
+    BaseAddresses, EndianSlice, LittleEndian, RegisterRule, UninitializedUnwindContext,
 };
 use log::{debug, error, info};
 use rustyline::Editor;
@@ -147,19 +146,15 @@ fn not_main() -> Result<i32, anyhow::Error> {
                         if let Ok(name) = entry.get_name(elf) {
                             if Some(entry.shndx() as u32) == binfmt_shndx {
                                 footprints.insert(entry.value(), name);
-                            } else if Some(entry.shndx() as u32) == text_shndx
-                                && entry.size() != 0
+                            } else if Some(entry.shndx() as u32) == text_shndx && entry.size() != 0
                             {
                                 // clear the thumb bit
-                                let mut name =
-                                    rustc_demangle::demangle(name).to_string();
+                                let mut name = rustc_demangle::demangle(name).to_string();
                                 let start = entry.value() & !1;
 
                                 // strip the hash (e.g. `::hd881d91ced85c2b0`)
                                 let hash_len = "::hd881d91ced85c2b0".len();
-                                if let Some(pos) =
-                                    name.len().checked_sub(hash_len)
-                                {
+                                if let Some(pos) = name.len().checked_sub(hash_len) {
                                     let maybe_hash = &name[pos..];
                                     if maybe_hash.starts_with("::h") {
                                         // FIXME do not allocate again
@@ -167,8 +162,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
                                     }
                                 }
 
-                                range_names
-                                    .push((start..start + entry.size(), name));
+                                range_names.push((start..start + entry.size(), name));
                             }
 
                             if name == "SEMIDAP_CURSOR" {
@@ -179,17 +173,13 @@ fn not_main() -> Result<i32, anyhow::Error> {
                             } else if name == "SEMIDAP_BUFFER" {
                                 let size = entry.size();
                                 if size.is_power_of_two() {
-                                    if let (Ok(addr), Ok(len)) = (
-                                        u32::try_from(entry.value()),
-                                        u32::try_from(size),
-                                    ) {
+                                    if let (Ok(addr), Ok(len)) =
+                                        (u32::try_from(entry.value()), u32::try_from(size))
+                                    {
                                         semidap_buffer = Some((addr, len));
                                     }
                                 } else {
-                                    error!(
-                                        "malformed SEMIDAP_BUFFER (len={})",
-                                        size
-                                    );
+                                    error!("malformed SEMIDAP_BUFFER (len={})", size);
                                 }
                             }
                         }
@@ -207,8 +197,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
     range_names.sort_unstable_by(|a, b| a.0.start.cmp(&b.0.start));
 
     let mut dap = Dap::open(opts.vendor, opts.product)?;
-    let debug_frame = debug_frame
-        .ok_or_else(|| anyhow!("`.debug_frame` section is missing"))?;
+    let debug_frame = debug_frame.ok_or_else(|| anyhow!("`.debug_frame` section is missing"))?;
 
     // FIXME this is not robust enough; when the process is killed (e.g. by
     // `cargo-watch`) sometimes this errors with "`DAP_GetPacketSize` failed"
@@ -241,10 +230,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
             )?;
 
             if bytes != section.bytes {
-                return Err(anyhow!(
-                    "verification of section `{}` failed",
-                    section.name
-                ));
+                return Err(anyhow!("verification of section `{}` failed", section.name));
             }
             let end = Instant::now();
 
@@ -256,8 +242,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
 
     let dur = end - start;
     const NANOS: u64 = 1_000_000_000;
-    let speed = total_bytes * NANOS
-        / (dur.as_secs() * NANOS + u64::from(dur.subsec_nanos()));
+    let speed = total_bytes * NANOS / (dur.as_secs() * NANOS + u64::from(dur.subsec_nanos()));
     info!("loaded {} bytes in {:?} ({} B/s)", total_bytes, dur, speed);
 
     info!("booting program (start to end: {:?})", end - beginning);
@@ -285,8 +270,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
         ) -> Result<u32, anyhow::Error> {
             // TODO use atomic commands to read the cursor in a single DAP (HID)
             // transaction
-            let writes =
-                dap.memory_read::<u16>(cursorp, readps.len() as u32)?;
+            let writes = dap.memory_read::<u16>(cursorp, readps.len() as u32)?;
 
             let mut xfer = 0;
             let cap = cap / readps.len() as u32;
@@ -298,9 +282,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
 
                 let available = write.wrapping_sub(read);
                 if available > cap {
-                    return Err(anyhow!(
-                        "fatal: semidap buffer has been overrun"
-                    ));
+                    return Err(anyhow!("fatal: semidap buffer has been overrun"));
                 }
                 let cursor = read % cap;
 
@@ -308,10 +290,8 @@ fn not_main() -> Result<i32, anyhow::Error> {
                     // the readable part wraps around the end of the buffer: do a
                     // split transfer
                     let pivot = cursor + available - cap;
-                    let first_half =
-                        dap.memory_read(bufferp + cursor, pivot)?;
-                    let second_half =
-                        dap.memory_read(bufferp, available - pivot)?;
+                    let first_half = dap.memory_read(bufferp + cursor, pivot)?;
+                    let second_half = dap.memory_read(bufferp, available - pivot)?;
                     hbuffer.extend_from_slice(&first_half);
                     hbuffer.extend_from_slice(&second_half);
                 } else {
@@ -326,9 +306,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
             Ok(xfer)
         }
 
-        if let (Some(cursor), Some((bufferp, cap))) =
-            (semidap_cursor, semidap_buffer)
-        {
+        if let (Some(cursor), Some((bufferp, cap))) = (semidap_cursor, semidap_buffer) {
             drain(
                 cursor,
                 bufferp,
@@ -349,9 +327,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
                 let total = bytes.len();
 
                 debug!("{}> {:?}", src, bytes);
-                while let Ok((message, i)) =
-                    binfmt_parser::parse_message(&bytes, &footprints)
-                {
+                while let Ok((message, i)) = binfmt_parser::parse_message(&bytes, &footprints) {
                     consumed += i;
                     bytes = &bytes[i..];
                     messages.push((src, message));
@@ -474,16 +450,10 @@ fn backtrace(
             Self { cache }
         }
 
-        fn get(
-            &mut self,
-            reg: cortex_m::Register,
-            dap: &mut Dap,
-        ) -> Result<u32, anyhow::Error> {
+        fn get(&mut self, reg: cortex_m::Register, dap: &mut Dap) -> Result<u32, anyhow::Error> {
             Ok(match self.cache.entry(reg) {
                 btree_map::Entry::Occupied(entry) => *entry.get(),
-                btree_map::Entry::Vacant(entry) => {
-                    *entry.insert(dap.read_core_register(reg)?)
-                }
+                btree_map::Entry::Vacant(entry) => *entry.insert(dap.read_core_register(reg)?),
             })
         }
 
@@ -500,9 +470,7 @@ fn backtrace(
 
             match rule {
                 CfaRule::RegisterAndOffset { register, offset } => {
-                    let cfa =
-                        (i64::from(self.get(gimli2cortex(register), dap)?)
-                            + offset) as u32;
+                    let cfa = (i64::from(self.get(gimli2cortex(register), dap)?) + offset) as u32;
                     let ok = self.cache.get(&Register::SP) != Some(&cfa);
                     self.cache.insert(Register::SP, cfa);
                     Ok(ok)
@@ -570,13 +538,8 @@ fn backtrace(
             )
         );
 
-        let fde = debug_frame.fde_for_address(
-            bases,
-            pc.into(),
-            DebugFrame::cie_from_offset,
-        )?;
-        let uwt_row =
-            fde.unwind_info_for_address(debug_frame, bases, ctx, pc.into())?;
+        let fde = debug_frame.fde_for_address(bases, pc.into(), DebugFrame::cie_from_offset)?;
+        let uwt_row = fde.unwind_info_for_address(debug_frame, bases, ctx, pc.into())?;
 
         let cfa_changed = registers.update_cfa(uwt_row.cfa(), dap)?;
 
@@ -590,9 +553,7 @@ fn backtrace(
         }
 
         if !cfa_changed && lr == pc {
-            println!(
-                "error: the stack appears to be corrupted beyond this point"
-            );
+            println!("error: the stack appears to be corrupted beyond this point");
             return Ok(());
         }
 
@@ -605,8 +566,7 @@ fn backtrace(
             // XXX insert other registers?
             registers.insert(Register::LR, stacked.lr);
             // adjust the stack pointer for stacked registers
-            registers
-                .insert(Register::SP, sp + mem::size_of::<Stacked>() as u32);
+            registers.insert(Register::SP, sp + mem::size_of::<Stacked>() as u32);
             pc = stacked.pc;
         } else {
             if lr & 1 == 0 {
@@ -628,10 +588,7 @@ fn handle_exception(
 ) -> Result<i32, anyhow::Error> {
     use cortex_m::Register;
 
-    fn read_register(
-        dap: &mut Dap,
-        reg: Register,
-    ) -> Result<(Register, u32), anyhow::Error> {
+    fn read_register(dap: &mut Dap, reg: Register) -> Result<(Register, u32), anyhow::Error> {
         let val = dap.read_core_register(reg)?;
         Ok((reg, val))
     }
@@ -786,25 +743,23 @@ commands:
             let mut parts = line["show ".len()..].trim().splitn(3, ' ');
             let addr = parts.next().and_then(|s| {
                 if s.starts_with("0x") {
-                    u32::from_str_radix(&s["0x".len()..].replace('_', ""), 16)
-                        .ok()
+                    u32::from_str_radix(&s["0x".len()..].replace('_', ""), 16).ok()
                 } else {
                     s.parse::<u32>().ok()
                 }
             });
 
             let range = match (parts.next(), parts.next()) {
-                (Some(n), None) => {
-                    n.parse::<i32>()
-                        .ok()
-                        .map(|n| if n < 0 { n..1 } else { 0..n })
-                }
+                (Some(n), None) => n
+                    .parse::<i32>()
+                    .ok()
+                    .map(|n| if n < 0 { n..1 } else { 0..n }),
 
                 (Some(m), Some(n)) => {
                     if m.starts_with("-") && !n.starts_with("-") {
-                        m.parse::<i32>().ok().and_then(|m| {
-                            n.parse::<i32>().ok().map(|n| m..n + 1)
-                        })
+                        m.parse::<i32>()
+                            .ok()
+                            .and_then(|m| n.parse::<i32>().ok().map(|n| m..n + 1))
                     } else {
                         None
                     }
@@ -834,10 +789,7 @@ commands:
                                 if cursor == addr {
                                     use colored::*;
 
-                                    print!(
-                                        " {}",
-                                        format!("{:#010x}", words[i]).bold()
-                                    );
+                                    print!(" {}", format!("{:#010x}", words[i]).bold());
                                 } else {
                                     print!(" {:#010x}", words[i]);
                                 }

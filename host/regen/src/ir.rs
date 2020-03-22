@@ -79,19 +79,19 @@ impl Access {
 
     pub fn write_is_unsafe(&self) -> bool {
         match self {
-            Access::WriteOnly { unsafe_write }
-            | Access::ReadWrite { unsafe_write } => *unsafe_write,
+            Access::WriteOnly { unsafe_write } | Access::ReadWrite { unsafe_write } => {
+                *unsafe_write
+            }
             _ => false,
         }
     }
 
     pub fn make_write_unsafe(&mut self) {
         match self {
-            Access::WriteOnly { unsafe_write }
-            | Access::ReadWrite { unsafe_write } => *unsafe_write = true,
-            _ => panic!(
-                "`make_write_unsafe` called on a register with no write access"
-            ),
+            Access::WriteOnly { unsafe_write } | Access::ReadWrite { unsafe_write } => {
+                *unsafe_write = true
+            }
+            _ => panic!("`make_write_unsafe` called on a register with no write access"),
         }
     }
 }

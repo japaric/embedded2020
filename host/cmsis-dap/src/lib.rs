@@ -100,9 +100,7 @@ impl crate::Dap {
         );
         self.swj_clock(DEFAULT_SWD_FREQUENCY)?;
 
-        info!(
-            "configuring transfer to retry on WAIT responses from the target"
-        );
+        info!("configuring transfer to retry on WAIT responses from the target");
         self.transfer_configure(0, DEFAULT_WAIT_RETRY, 0)?;
 
         info!("switching the target's connection mode from JTAG to SWD");
@@ -141,14 +139,10 @@ impl crate::Dap {
             self.push_dap_transfer_request(
                 adiv5::Register::DP_CTRL,
                 dap::Request::Write(
-                    (stat & adiv5::DP_CTRL_CSYSPWRUPREQ)
-                        | adiv5::DP_CTRL_CDBGPWRUPREQ,
+                    (stat & adiv5::DP_CTRL_CSYSPWRUPREQ) | adiv5::DP_CTRL_CDBGPWRUPREQ,
                 ),
             );
-            self.push_dap_transfer_request(
-                adiv5::Register::DP_STAT,
-                dap::Request::Read,
-            );
+            self.push_dap_transfer_request(adiv5::Register::DP_STAT, dap::Request::Read);
             let stat = self.execute_dap_transfer()?[0];
             if stat & adiv5::DP_STAT_CDBGPWRUPACK == 0 {
                 return Err(anyhow!("debug power-up request failed"));
@@ -163,14 +157,10 @@ impl crate::Dap {
             self.push_dap_transfer_request(
                 adiv5::Register::DP_CTRL,
                 dap::Request::Write(
-                    (stat & adiv5::DP_CTRL_CDBGPWRUPREQ)
-                        | adiv5::DP_CTRL_CSYSPWRUPREQ,
+                    (stat & adiv5::DP_CTRL_CDBGPWRUPREQ) | adiv5::DP_CTRL_CSYSPWRUPREQ,
                 ),
             );
-            self.push_dap_transfer_request(
-                adiv5::Register::DP_STAT,
-                dap::Request::Read,
-            );
+            self.push_dap_transfer_request(adiv5::Register::DP_STAT, dap::Request::Read);
             let stat = self.execute_dap_transfer()?[0];
             if stat & adiv5::DP_STAT_CSYSPWRUPACK == 0 {
                 return Err(anyhow!("system power-up request failed"));

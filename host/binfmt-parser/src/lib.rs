@@ -85,9 +85,7 @@ impl fmt::Display for Node<'_> {
 
             Node::Pointer(val) => write!(f, "{:#010x}", val),
 
-            Node::Register(footprint, val) => {
-                f.write_str(&dynfmt_register(footprint, *val))
-            }
+            Node::Register(footprint, val) => f.write_str(&dynfmt_register(footprint, *val)),
 
             Node::U32(val) => write!(f, "{}", val),
         }
@@ -262,8 +260,7 @@ pub fn parse_node<'f>(
             let (len, i) = leb128_decode_u32(&bytes[consumed..])?;
             consumed += i;
             let len = len as usize;
-            let bytes =
-                bytes.get(consumed..consumed + len as usize).ok_or(EoS)?;
+            let bytes = bytes.get(consumed..consumed + len as usize).ok_or(EoS)?;
             consumed += len;
             Ok((Node::Bytes(bytes.to_owned()), consumed))
         }
@@ -337,9 +334,7 @@ pub fn parse_node<'f>(
 
         Tag::Signed => todo!(),
 
-        Tag::Debug | Tag::Error | Tag::Info | Tag::Trace | Tag::Warn => {
-            unreachable!()
-        }
+        Tag::Debug | Tag::Error | Tag::Info | Tag::Trace | Tag::Warn => unreachable!(),
     }
 }
 

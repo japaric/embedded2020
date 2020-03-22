@@ -1,9 +1,9 @@
 #![no_main]
 #![no_std]
 
+use async_core::task;
 use hal as _; // memory layout
 use panic_never as _; // this program contains zero core::panic* calls
-use async_core::task;
 
 #[no_mangle]
 fn main() -> ! {

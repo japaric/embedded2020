@@ -54,9 +54,7 @@ fn audit_nrf52(dev: &mut ir::Device<'_>) {
                 for reg in &mut periph.registers {
                     match &*reg.name {
                         "RXD_AMOUNT" | "TXD_AMOUNT" => {
-                            for field in
-                                reg.r_fields.iter_mut().chain(&mut reg.w_fields)
-                            {
+                            for field in reg.r_fields.iter_mut().chain(&mut reg.w_fields) {
                                 if field.name == "AMOUNT" {
                                     field.width = 8;
                                 }
@@ -67,9 +65,7 @@ fn audit_nrf52(dev: &mut ir::Device<'_>) {
                             // DMA related
                             reg.access.make_write_unsafe();
 
-                            for field in
-                                reg.r_fields.iter_mut().chain(&mut reg.w_fields)
-                            {
+                            for field in reg.r_fields.iter_mut().chain(&mut reg.w_fields) {
                                 if field.name == "MAXCNT" {
                                     field.width = 8;
                                 }
@@ -77,8 +73,7 @@ fn audit_nrf52(dev: &mut ir::Device<'_>) {
                         }
 
                         // DMA related
-                        "TASKS_STARTRX" | "TASKS_STARTTX" | "RXD_PTR"
-                        | "TXD_PTR" => {
+                        "TASKS_STARTRX" | "TASKS_STARTTX" | "RXD_PTR" | "TXD_PTR" => {
                             reg.access.make_write_unsafe();
                         }
 

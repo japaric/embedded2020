@@ -28,10 +28,7 @@ impl crate::Dap {
 
     /// Writes the contents of the HID buffer to the HID device
     pub(crate) fn hid_flush(&mut self) -> Result<(), anyhow::Error> {
-        debug_assert_eq!(
-            self.buffer[0], REPORT_ID,
-            "first byte must be `REPORT_ID`"
-        );
+        debug_assert_eq!(self.buffer[0], REPORT_ID, "first byte must be `REPORT_ID`");
 
         let bytes = &self.buffer[..self.cursor.into()];
         let start = Instant::now();
@@ -51,10 +48,7 @@ impl crate::Dap {
     ///
     /// - `hid_push` has been used but the HID buffer has not been drained
     /// - `len` exceeds the packet size supported by the target
-    pub(crate) fn hid_read(
-        &mut self,
-        len: u16,
-    ) -> Result<&[u8], anyhow::Error> {
+    pub(crate) fn hid_read(&mut self, len: u16) -> Result<&[u8], anyhow::Error> {
         assert_eq!(self.cursor, 1, "HID buffer must be flushed before a read");
         assert!(
             len <= self.packet_size,

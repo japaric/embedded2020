@@ -191,14 +191,9 @@ fn register(register: &Register<'_>) -> TokenStream2 {
                 let adapter = if field.width < 4 {
                     format_ident!("Bin{}", field.width)
                 } else {
-                    format_ident!(
-                        "Hex{}",
-                        (field.width - 1) / 4 + 1
-                    )
+                    format_ident!("Hex{}", (field.width - 1) / 4 + 1)
                 };
-                chain.push(
-                    quote!(field(#fname, &regen_ufmt::#adapter(self.#field_name()))?),
-                );
+                chain.push(quote!(field(#fname, &regen_ufmt::#adapter(self.#field_name()))?));
                 quote!(
                     #[allow(non_snake_case)]
                     #[doc = #doc]
@@ -231,17 +226,12 @@ fn register(register: &Register<'_>) -> TokenStream2 {
                     let range = if field.width == 1 {
                         field.offset.to_string()
                     } else {
-                        format!(
-                            "{}:{}",
-                            field.offset,
-                            field.offset + field.width
-                        )
+                        format!("{}:{}", field.offset, field.offset + field.width)
                     };
                     format!("{}: {{{}}}", field.name, range)
                 })
                 .collect::<Vec<_>>();
-            let footprint =
-                format!("{} {{{{ {} }}}}", rname, fields.join(", "));
+            let footprint = format!("{} {{{{ {} }}}}", rname, fields.join(", "));
             let section = format!(".binfmt.{}", footprint);
 
             mod_items.push(quote!(

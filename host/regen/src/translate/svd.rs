@@ -11,8 +11,7 @@ pub fn device<'a>(d: &'a svd::Device, whitelist: &[&str]) -> ir::Device<'a> {
         if whitelist.contains(&&*periph.name) {
             // skip peripheral with no registers
             if let Some(regs) = periph.registers.as_ref() {
-                peripherals
-                    .push(translate::peripheral(&periph, regs, defaults));
+                peripherals.push(translate::peripheral(&periph, regs, defaults));
             }
         }
     }
@@ -35,9 +34,7 @@ pub fn peripheral<'a>(
 
     for cluster in regs {
         match cluster {
-            svd::RegisterCluster::Register(r) => {
-                register_(r, None, &[defaults], &mut ir_regs)
-            }
+            svd::RegisterCluster::Register(r) => register_(r, None, &[defaults], &mut ir_regs),
 
             svd::RegisterCluster::Cluster(cluster) => match cluster {
                 svd::Cluster::Single(info) => {
@@ -50,9 +47,7 @@ pub fn peripheral<'a>(
                                 &mut ir_regs,
                             ),
 
-                            svd::RegisterCluster::Cluster(..) => {
-                                unimplemented!()
-                            }
+                            svd::RegisterCluster::Cluster(..) => unimplemented!(),
                         }
                     }
                 }
@@ -66,8 +61,7 @@ pub fn peripheral<'a>(
 
                     for i in 0..dim.dim {
                         // FIXME too lazy to do ownership correctly right now
-                        let ci: &'static mut _ =
-                            Box::leak(Box::new(ci.clone()));
+                        let ci: &'static mut _ = Box::leak(Box::new(ci.clone()));
 
                         ci.name = template.replace("[%s]", &i.to_string());
                         ci.address_offset = offset + i * dim.dim_increment;
@@ -78,16 +72,11 @@ pub fn peripheral<'a>(
                                     ir_regs.push(translate::register(
                                         ri,
                                         Some(ci),
-                                        &[
-                                            &ci.default_register_properties,
-                                            defaults,
-                                        ],
+                                        &[&ci.default_register_properties, defaults],
                                     ));
                                 }
 
-                                svd::RegisterCluster::Cluster(..) => {
-                                    unimplemented!()
-                                }
+                                svd::RegisterCluster::Cluster(..) => unimplemented!(),
                             }
                         }
                     }
@@ -160,9 +149,7 @@ pub fn register<'a>(
     ir::Register {
         access: r
             .access
-            .or_else(|| {
-                defaults.iter().filter_map(|default| default.access).next()
-            })
+            .or_else(|| defaults.iter().filter_map(|default| default.access).next())
             .map(translate::access)
             .expect("unimplemented"),
         description: r.description.as_ref().map(|s| s.as_str().into()),
@@ -172,9 +159,7 @@ pub fn register<'a>(
         offset: u64::from(offset),
         width: r
             .size
-            .or_else(|| {
-                defaults.iter().filter_map(|default| default.size).next()
-            })
+            .or_else(|| defaults.iter().filter_map(|default| default.size).next())
             .map(translate::register_size)
             .expect("unimplemented"),
     }
@@ -205,10 +190,7 @@ pub fn fields<'a>(
             svd::Field::Single(fi) => {
                 let (offset, width) = translate::bit_range(fi.bit_range);
                 let bf = ir::Bitfield {
-                    description: fi
-                        .description
-                        .as_ref()
-                        .map(|s| s.as_str().into()),
+                    description: fi.description.as_ref().map(|s| s.as_str().into()),
                     name: fi.name.as_str().into(),
                     offset,
                     width,

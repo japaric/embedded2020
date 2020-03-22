@@ -4,14 +4,17 @@
 #![deny(warnings)]
 #![no_std]
 
+use core::marker::PhantomData;
+
+use cm::{DWT, NVIC};
+use pac::FICR;
+
 mod errata;
 pub mod led;
 mod reset;
 pub mod time;
+pub mod timer;
 mod usbd;
-
-use cm::{DWT, NVIC};
-use pac::FICR;
 
 /// Reads the 32-bit cycle counter
 pub fn cyccnt() -> u32 {
@@ -25,6 +28,44 @@ pub fn deviceid() -> u64 {
     FICR::borrow_unchecked(|ficr| {
         u64::from(ficr.DEVICEID0.read().bits()) | u64::from(ficr.DEVICEID1.read().bits()) << 32
     })
+}
+
+struct NotSync {
+    inner: PhantomData<*mut ()>,
+}
+
+impl NotSync {
+    fn new() -> Self {
+        NotSync { inner: PhantomData }
+    }
+}
+
+unsafe impl Send for NotSync {}
+
+#[allow(dead_code)]
+fn mask0(interrupts: &[Interrupt0]) {
+    let mut val = 0;
+    for interrupt in interrupts.iter().cloned() {
+        val |= 1 << interrupt as u8;
+    }
+
+    if val != 0 {
+        // NOTE(borrow_unchecked) single-instruction write
+        NVIC::borrow_unchecked(|nvic| nvic.ICER0.write(val));
+    }
+}
+
+#[allow(dead_code)]
+fn mask1(interrupts: &[Interrupt1]) {
+    let mut val = 0;
+    for interrupt in interrupts.iter().cloned() {
+        val |= 1 << (interrupt as u8 - 32);
+    }
+
+    if val != 0 {
+        // NOTE(borrow_unchecked) single-instruction write
+        NVIC::borrow_unchecked(|nvic| nvic.ICER1.write(val));
+    }
 }
 
 #[allow(dead_code)]

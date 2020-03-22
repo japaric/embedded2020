@@ -26,7 +26,7 @@ pub use asm::wfe;
 /// Runs the given tasks concurrently
 ///
 /// This macro is divergent (`-> !`); the tasks should also be divergent
-#[proc_macro_hack]
+#[proc_macro_hack(support_nested)]
 pub use executor_macros::run;
 
 /// Implementation detail

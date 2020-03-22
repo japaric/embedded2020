@@ -4,6 +4,10 @@ use core::{ops, time::Duration};
 
 use pac::RTC0;
 
+pub(crate) fn now() -> u32 {
+    RTC0::borrow_unchecked(|rtc| rtc.COUNTER.read().into())
+}
+
 /// A measurement of a monotonically nondecreasing clock. Opaque and only useful
 /// with `core::time::Duration`
 pub struct Instant {
@@ -14,9 +18,7 @@ pub struct Instant {
 impl Instant {
     /// Returns an `Instant` corresponding to "now"
     pub fn now() -> Self {
-        Instant {
-            inner: RTC0::borrow_unchecked(|rtc| rtc.COUNTER.read().into()),
-        }
+        Instant { inner: now() }
     }
 }
 

@@ -10,3 +10,4 @@ version = "0.0.0"
 asm = { path = "../asm" }
 executor-macros = { path = "../../host/executor-macros" }
 proc-macro-hack = "0.5.12"
+proc-macro-nested = "0.1.4"

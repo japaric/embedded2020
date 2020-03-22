@@ -66,6 +66,8 @@ unsafe extern "C" fn Reset() {
 
     // start the RTC with a counter of 0
     RTC0::borrow_unchecked(|rtc| {
+        rtc.INTENSET
+            .write(|w| w.COMPARE0(1).COMPARE1(1).COMPARE2(1).COMPARE3(1));
         rtc.TASKS_CLEAR.write(|w| w.TASKS_CLEAR(1));
         rtc.TASKS_START.write(|w| w.TASKS_START(1));
     });

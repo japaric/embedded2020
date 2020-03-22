@@ -8,6 +8,7 @@ version = "0.0.0"
 
 [dependencies]
 binfmt = { path = "../../shared/binfmt" }
+executor = { path = "../executor" }
 hal = { path = "../hal" }
 panic-abort = { path = "../panic-abort" }
 panic-never = "0.1.0"

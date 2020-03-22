@@ -11,7 +11,7 @@ use core::{
 
 use pac::RTC0;
 
-use crate::{time, Interrupt0, NotSync};
+use crate::{led, time, Interrupt0, NotSync};
 
 /// [Singleton] timer
 pub struct Timer {
@@ -123,6 +123,13 @@ static mut WAKERS: [Option<Waker>; 4] = [None, None, None, None];
 #[no_mangle]
 fn RTC0() {
     RTC0::borrow_unchecked(|rtc| {
+        if rtc.EVENTS_OVRFLW.read().EVENTS_OVRFLW() != 0 {
+            led::Blue.off();
+            led::Green.off();
+            led::Red.on();
+            semidap::abort();
+        }
+
         if rtc.EVENTS_COMPARE0.read().EVENTS_COMPARE() != 0 {
             rtc.EVENTS_COMPARE0.zero();
 

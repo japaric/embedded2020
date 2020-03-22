@@ -332,7 +332,11 @@ pub fn parse_node<'f>(
             Ok((Node::Register(footprint, val), consumed))
         }
 
-        Tag::Signed => todo!(),
+        Tag::Signed => {
+            let (val, i) = leb128_decode_u32(&bytes[consumed..])?;
+            consumed += i;
+            Ok((Node::I32(unzigzag(val)), consumed))
+        },
 
         Tag::Debug | Tag::Error | Tag::Info | Tag::Trace | Tag::Warn => unreachable!(),
     }
@@ -413,13 +417,16 @@ fn leb128_decode_u32(bytes: &[u8]) -> Result<(u32, usize), EoS> {
     Err(EoS)
 }
 
-#[cfg(test)]
-fn unzigzag(_x: u32) -> i32 {
-    todo!()
+fn unzigzag(x: u32) -> i32 {
+    use core::ops::Neg as _;
+
+    (((x & 1) as i32).neg() as u32 ^ (x >> 1)) as i32
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use binfmt::Tag;
 
     #[test]
@@ -459,7 +466,8 @@ mod tests {
 
     #[test]
     fn parse_and_format() {
-        let footprints = ["The answer is {}"];
+        let mut footprints = BTreeMap::new();
+        footprints.insert(0, "The answer is {}");
 
         assert_eq!(
             super::parse_node(&[Tag::Unsigned as u8, 1], &footprints)
@@ -481,7 +489,6 @@ mod tests {
         );
     }
 
-    #[ignore]
     #[test]
     fn unzigzag() {
         assert_eq!(super::unzigzag(0), 0);

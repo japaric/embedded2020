@@ -7,7 +7,7 @@ use panic_never as _; // this program contains zero core::panic* calls
 
 #[no_mangle]
 fn main() -> ! {
-    let m = Mutex::new(0u32);
+    let m = Mutex::new(0);
 
     let mut lock = m.try_lock().unwrap();
 

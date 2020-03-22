@@ -21,7 +21,7 @@ fn main() -> ! {
 
     let b = async {
         semidap::info!("B: before send");
-        s.send(42u32).await;
+        s.send(42).await;
         semidap::info!("B: after send");
 
         loop {

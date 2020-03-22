@@ -433,6 +433,28 @@ fn peripherals() -> Vec<Peripheral<'static>> {
                     w_fields: vec![],
                     width: Width::U32,
                 },
+                Register {
+                    access: Access::ReadWrite {
+                        unsafe_write: false,
+                    },
+                    description: Some("Interrupt Clear-Enable Register 0".into()),
+                    name: "ICER0".into(),
+                    offset: 0x80,
+                    r_fields: vec![],
+                    w_fields: vec![],
+                    width: Width::U32,
+                },
+                Register {
+                    access: Access::ReadWrite {
+                        unsafe_write: false,
+                    },
+                    description: Some("Interrupt Clear-Enable Register 1".into()),
+                    name: "ICER1".into(),
+                    offset: 0x84,
+                    r_fields: vec![],
+                    w_fields: vec![],
+                    width: Width::U32,
+                },
             ],
         },
         Peripheral {

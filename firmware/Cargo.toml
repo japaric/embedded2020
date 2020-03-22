@@ -1,7 +1,8 @@
 [workspace]
 members = [
-  "asm",
   "apps",
+  "asm",
+  "executor",
   "hal",
   "pac",
   "panic-abort",

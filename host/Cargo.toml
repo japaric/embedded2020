@@ -2,6 +2,7 @@
 members = [
   "binfmt-parser",
   "cmsis-dap",
+  "executor-macros",
   "regen",
   "semidap",
 ]

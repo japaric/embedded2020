@@ -8,8 +8,10 @@ version = "0.0.0"
 
 [dependencies]
 asm = { path = "../asm" }
+async-core = { path = "../../shared/async-core" }
 binfmt = { path = "../../shared/binfmt" }
 cm = { path = "../../shared/cm", features = ["binfmt", "SCB"] }
+executor = { path = "../executor" }
 hal = { path = "../hal" }
 pac = { path = "../pac" }
 panic-abort = { path = "../panic-abort" }

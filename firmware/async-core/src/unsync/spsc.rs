@@ -6,7 +6,7 @@ use core::{
     mem::{ManuallyDrop, MaybeUninit},
     pin::Pin,
     ptr,
-    task::{Context, Poll, Waker},
+    task::{Context, Poll},
 };
 
 /// `async`-aware channel
@@ -14,8 +14,6 @@ use core::{
 pub struct Channel<T> {
     buffer: UnsafeCell<MaybeUninit<T>>,
     full: Cell<bool>,
-    recv_waker: Cell<Option<Waker>>,
-    send_waker: Cell<Option<Waker>>,
 }
 
 impl<T> Channel<T> {
@@ -24,8 +22,6 @@ impl<T> Channel<T> {
         Self {
             buffer: UnsafeCell::new(MaybeUninit::uninit()),
             full: Cell::new(false),
-            recv_waker: Cell::new(None),
-            send_waker: Cell::new(None),
         }
     }
 
@@ -53,7 +49,7 @@ impl<T> Sender<'_, T> {
         impl<T> Future for Send<'_, '_, T> {
             type Output = ();
 
-            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+            fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<()> {
                 if !self.sender.channel.full.get() {
                     let bufferp = self.sender.channel.buffer.get() as *mut T;
                     unsafe { bufferp.write(ptr::read(&*self.msg)) }
@@ -62,19 +58,10 @@ impl<T> Sender<'_, T> {
                     self.sender.channel.full.set(true);
 
                     // wake up the receiver
-                    if let Some(waker) = self.sender.channel.recv_waker.take() {
-                        waker.wake();
-                    }
+                    asm::sev();
 
                     Poll::Ready(())
                 } else {
-                    // register a waker for this sender
-                    // NOTE(as_ptr) we peek into the flag of the `Option` but create no references
-                    // into the `Option`'s data
-                    if unsafe { (*self.sender.channel.send_waker.as_ptr()).is_none() } {
-                        self.sender.channel.send_waker.set(Some(cx.waker().clone()));
-                    }
-
                     Poll::Pending
                 }
             }
@@ -85,9 +72,6 @@ impl<T> Sender<'_, T> {
                 if !self.sent.get() {
                     unsafe { ManuallyDrop::drop(&mut self.msg) }
                 }
-
-                // deregister the waker
-                drop(self.sender.channel.send_waker.take());
             }
         }
 
@@ -114,7 +98,7 @@ impl<T> Receiver<'_, T> {
         impl<T> Future for Recv<'_, '_, T> {
             type Output = T;
 
-            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<T> {
+            fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<T> {
                 if self.receiver.channel.full.get() {
                     self.receiver.channel.full.set(false);
 
@@ -122,31 +106,12 @@ impl<T> Receiver<'_, T> {
                     let val = unsafe { bufferp.read() };
 
                     // wake up the sender
-                    if let Some(waker) = self.receiver.channel.send_waker.take() {
-                        waker.wake();
-                    }
+                    asm::sev();
 
                     Poll::Ready(val)
                 } else {
-                    // register a waker for this receiver
-                    // NOTE(as_ptr) we peek into the flag of the `Option` but create no references
-                    // into the `Option`'s data
-                    if unsafe { (*self.receiver.channel.recv_waker.as_ptr()).is_none() } {
-                        self.receiver
-                            .channel
-                            .recv_waker
-                            .set(Some(cx.waker().clone()));
-                    }
-
                     Poll::Pending
                 }
-            }
-        }
-
-        impl<T> Drop for Recv<'_, '_, T> {
-            fn drop(&mut self) {
-                // deregister the waker
-                drop(self.receiver.channel.recv_waker.take());
             }
         }
 

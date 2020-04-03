@@ -2,6 +2,7 @@
 members = [
   "apps",
   "asm",
+  "async-core",
   "executor",
   "hal",
   "pac",

@@ -14,6 +14,7 @@ pub mod led;
 mod reset;
 pub mod time;
 pub mod timer;
+#[cfg(feature = "usb")]
 mod usbd;
 
 /// Reads the 32-bit cycle counter

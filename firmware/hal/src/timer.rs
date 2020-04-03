@@ -4,14 +4,14 @@ use core::{
     cmp,
     future::Future,
     pin::Pin,
-    sync::atomic::{self, AtomicU8, Ordering},
-    task::{Context, Poll, Waker},
+    sync::atomic::{AtomicU8, Ordering},
+    task::{Context, Poll},
     time::Duration,
 };
 
 use pac::RTC0;
 
-use crate::{led, time, Interrupt0, NotSync};
+use crate::{led, time, NotSync};
 
 /// [Singleton] timer
 pub struct Timer {
@@ -24,7 +24,6 @@ static TAKEN: AtomicU8 = AtomicU8::new(0);
 
 impl Timer {
     /// Claims the `Timer`
-    // TODO allow claiming up to 4 instances
     pub fn claim() -> Self {
         if TAKEN.load(Ordering::Relaxed) < 4 {
             let i = TAKEN.fetch_add(1, Ordering::Relaxed);
@@ -36,7 +35,8 @@ impl Timer {
                 };
             }
         }
-        semidap::panic!("`Timer` has already been claimed")
+
+        semidap::panic!("no more `Timer` instances can be claimed")
     }
 
     /// Waits for the specified duration
@@ -74,7 +74,7 @@ enum State {
 impl Future for Wait<'_> {
     type Output = ();
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<()> {
         match self.state {
             State::NotStarted { diff } => {
                 let i = self.timer.i;
@@ -92,21 +92,10 @@ impl Future for Wait<'_> {
                 });
                 self.state = State::Started { end };
 
-                crate::mask0(&[Interrupt0::RTC0]);
-                unsafe {
-                    *WAKERS.get_unchecked_mut(usize::from(i)) = Some(cx.waker().clone());
-                    // NOTE(fence) force the previous operation to complete before the interrupt is
-                    // unmasked
-                    atomic::compiler_fence(Ordering::Release);
-                    crate::unmask0(&[Interrupt0::RTC0]); // volatile write
-                }
-
                 Poll::Pending
             }
 
             State::Started { end } => {
-                // NOTE(defensive check) the user or some abstraction may poll this future before
-                // the timer has expired
                 if time::now() >= end {
                     Poll::Ready(())
                 } else {
@@ -117,11 +106,11 @@ impl Future for Wait<'_> {
     }
 }
 
-static mut WAKERS: [Option<Waker>; 4] = [None, None, None, None];
-
 #[allow(non_snake_case)]
 #[no_mangle]
 fn RTC0() {
+    semidap::trace!("RTC0");
+
     RTC0::borrow_unchecked(|rtc| {
         if rtc.EVENTS_OVRFLW.read().EVENTS_OVRFLW() != 0 {
             led::Blue.off();
@@ -132,35 +121,18 @@ fn RTC0() {
 
         if rtc.EVENTS_COMPARE0.read().EVENTS_COMPARE() != 0 {
             rtc.EVENTS_COMPARE0.zero();
-
-            // NOTE(unsafe) uninterruptible operation because this runs at higher priority
-            if let Some(waker) = unsafe { WAKERS[0].as_ref() } {
-                waker.wake_by_ref();
-            }
         }
 
         if rtc.EVENTS_COMPARE1.read().EVENTS_COMPARE() != 0 {
             rtc.EVENTS_COMPARE1.zero();
-
-            if let Some(waker) = unsafe { WAKERS[1].as_ref() } {
-                waker.wake_by_ref();
-            }
         }
 
         if rtc.EVENTS_COMPARE2.read().EVENTS_COMPARE() != 0 {
             rtc.EVENTS_COMPARE2.zero();
-
-            if let Some(waker) = unsafe { WAKERS[2].as_ref() } {
-                waker.wake_by_ref();
-            }
         }
 
         if rtc.EVENTS_COMPARE3.read().EVENTS_COMPARE() != 0 {
             rtc.EVENTS_COMPARE3.zero();
-
-            if let Some(waker) = unsafe { WAKERS[3].as_ref() } {
-                waker.wake_by_ref();
-            }
         }
     });
 }

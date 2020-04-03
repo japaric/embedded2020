@@ -10,12 +10,15 @@ version = "0.0.0"
 binfmt = { path = "../../shared/binfmt" }
 consts = { path = "../../shared/consts" }
 semidap = { path = "../semidap" }
-usbd = { path = "../../shared/usbd" }
+usbd = { path = "../../shared/usbd", optional = true }
 
 [dependencies.cm]
 features = ["DCB", "DWT", "NVIC"]
 path = "../../shared/cm"
 
 [dependencies.pac]
-features = ["binfmt", "CLOCK", "FICR", "P0", "POWER", "RTC0", "USBD"]
+features = ["binfmt", "CLOCK", "FICR", "P0", "RTC0"]
 path = "../pac"
+
+[features]
+usb = ["usbd", "pac/POWER", "pac/USBD"]

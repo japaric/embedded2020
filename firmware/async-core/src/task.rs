@@ -13,12 +13,13 @@ struct Yield {
 impl Future for Yield {
     type Output = ();
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<()> {
         if self.yielded {
             Poll::Ready(())
         } else {
             self.yielded = true;
-            cx.waker().wake_by_ref(); // wake ourselves
+            // wake ourselves
+            asm::sev();
 
             Poll::Pending
         }

@@ -7,4 +7,4 @@ publish = false
 version = "0.0.0"
 
 [dependencies]
-pin-project = "0.4.8"
+asm = { path = "../asm" }

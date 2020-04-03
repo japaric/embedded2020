@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
@@ -9,7 +11,7 @@ use syn::{
     parse::{self, Parse, ParseBuffer},
     parse_macro_input,
     punctuated::Punctuated,
-    Ident, LitInt, Token,
+    Ident, Token,
 };
 
 #[proc_macro_hack]
@@ -23,87 +25,36 @@ pub fn run(input: TokenStream) -> TokenStream {
             .into();
     }
 
-    if ntasks > 4 {
-        return parse::Error::new(
-            Span2::call_site(),
-            "only 4 concurrent tasks are supported at the moment",
-        )
-        .to_compile_error()
-        .into();
-    }
-
     let mut stmts = vec![];
-    let mut arms = vec![];
+    let mut polls = vec![];
 
     let krate = format_ident!("executor");
 
     // check that idents are futures and pin them
-    for (i, ident) in idents.iter().enumerate() {
+    for ident in idents.iter() {
         stmts.push(quote!(
             let mut #ident = #krate::check(#ident);
             // the future will never be moved
             let mut #ident = unsafe { core::pin::Pin::new_unchecked(&mut #ident) };
         ));
 
-        let i = LitInt::new(&i.to_string(), Span2::call_site());
-        arms.push(quote!(
-            #i => {
-                // NOTE this clears the flag
-                let waker = #krate::waker(flag);
-                let mut cx = core::task::Context::from_waker(&waker);
-                // XXX do we want to prevent futures being polled beyond completion?
-                drop(#ident.as_mut().poll(&mut cx));
-            }
+        polls.push(quote!(
+            // XXX do we want to prevent futures being polled beyond completion?
+            drop(#ident.as_mut().poll(&mut cx));
         ));
     }
 
-    // TODO add a drop guard to prevent `panic_unwind` breaking havoc
-    if ntasks == 1 {
-        let ident = &idents[0];
+    stmts.push(quote!(
+        let waker = #krate::waker();
+        let mut cx = core::task::Context::from_waker(&waker);
 
-        stmts.push(quote!(
-            static READY: core::sync::atomic::AtomicBool = {
-                core::sync::atomic::AtomicBool::new(true)
-            };
+        loop {
+            use core::future::Future as _;
 
-            loop {
-                use core::future::Future as _;
-
-                if READY.load(core::sync::atomic::Ordering::Relaxed) {
-                    READY.store(false, core::sync::atomic::Ordering::Relaxed);
-
-                    let waker = #krate::waker(&READY);
-                    let mut cx = core::task::Context::from_waker(&waker);
-                    drop(#ident.as_mut().poll(&mut cx));
-                } else {
-                    #krate::wfe();
-                }
-            }
-        ));
-    } else {
-        if ntasks == 2 {
-            stmts.push(quote!(static FLAGS: #krate::Flags2 = #krate::Flags2::new();));
-        } else {
-            stmts.push(quote!(static FLAGS: #krate::Flags4 = #krate::Flags4::new();));
+            #(#polls)*
+            #krate::wfe();
         }
-
-        stmts.push(quote!(
-            loop {
-                use core::future::Future as _;
-
-                while let Some((i, flag)) = FLAGS.next() {
-                    flag.store(false, core::sync::atomic::Ordering::Relaxed);
-
-                    match i {
-                        #(#arms)*
-                        _ => unsafe { core::hint::unreachable_unchecked() },
-                    }
-                }
-
-                #krate::wfe();
-            }
-        ));
-    }
+    ));
 
     quote!({
         #(#stmts)*

@@ -8,7 +8,7 @@ version = "0.0.0"
 
 [dependencies]
 asm = { path = "../asm" }
-async-core = { path = "../../shared/async-core" }
+async-core = { path = "../async-core" }
 binfmt = { path = "../../shared/binfmt" }
 cm = { path = "../../shared/cm", features = ["binfmt", "SCB"] }
 executor = { path = "../executor" }

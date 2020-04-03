@@ -1,5 +1,5 @@
 use cm::{DCB, DWT, NVIC};
-use pac::{CLOCK, P0, POWER, RTC0, USBD};
+use pac::{CLOCK, P0, RTC0};
 
 use crate::{Interrupt0, Interrupt1};
 
@@ -21,32 +21,38 @@ unsafe extern "C" fn Reset() {
     DWT::seal();
     NVIC::seal();
     P0::seal();
-    POWER::seal();
     RTC0::seal();
-    USBD::seal();
+
+    #[cfg(feature = "usb")]
+    pac::POWER::seal();
+    #[cfg(feature = "usb")]
+    pac::USBD::seal();
 
     // enable interrupts (they are still masked)
-    CLOCK::borrow_unchecked(|clock| {
-        // 'HFXO is stable'
-        clock.INTENSET.write(|w| w.HFCLKSTARTED(1));
-    });
-    POWER::borrow_unchecked(|power| {
-        power
-            .INTENSET
-            .write(|w| w.USBDETECTED(1).USBREMOVED(1).USBPWRRDY(1));
-    });
-    USBD::borrow_unchecked(|usbd| {
-        // enable interrupts
-        usbd.INTENSET.write(|w| {
-            w.USBRESET(1)
-                .ENDEPIN0(1)
-                .EP0DATADONE(1)
-                .ENDEPOUT0(1)
-                .USBEVENT(1)
-                .EP0SETUP(1)
-                .EPDATA(1)
+    #[cfg(feature = "usb")]
+    {
+        CLOCK::borrow_unchecked(|clock| {
+            // 'HFXO is stable'
+            clock.INTENSET.write(|w| w.HFCLKSTARTED(1));
         });
-    });
+        pac::POWER::borrow_unchecked(|power| {
+            power
+                .INTENSET
+                .write(|w| w.USBDETECTED(1).USBREMOVED(1).USBPWRRDY(1));
+        });
+        pac::USBD::borrow_unchecked(|usbd| {
+            // enable interrupts
+            usbd.INTENSET.write(|w| {
+                w.USBRESET(1)
+                    .ENDEPIN0(1)
+                    .EP0DATADONE(1)
+                    .ENDEPOUT0(1)
+                    .USBEVENT(1)
+                    .EP0SETUP(1)
+                    .EPDATA(1)
+            });
+        });
+    }
 
     // configure I/O pins
     P0::borrow_unchecked(|p0| {
@@ -80,7 +86,7 @@ unsafe extern "C" fn Reset() {
     });
 
     // unmask interrupts
-    crate::unmask0(&[Interrupt0::POWER_CLOCK]);
+    crate::unmask0(&[Interrupt0::POWER_CLOCK, Interrupt0::RTC0]);
     crate::unmask1(&[Interrupt1::USBD]);
 
     extern "Rust" {

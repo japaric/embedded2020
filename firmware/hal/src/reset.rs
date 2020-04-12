@@ -1,11 +1,14 @@
+use core::mem;
+
 use cm::{DCB, DWT, NVIC};
 use pac::{CLOCK, P0, RTC0};
 
-use crate::{Interrupt0, Interrupt1};
+use crate::Interrupt0;
 
 #[no_mangle]
 unsafe extern "C" fn Reset() {
     // NOTE(borrow_unchecked) interrupts disabled; this runs before user code
+    asm::disable_irq();
 
     // use the external 32.768 KHz crystal to drive the low frequency clock
     CLOCK::borrow_unchecked(|clock| {
@@ -22,37 +25,6 @@ unsafe extern "C" fn Reset() {
     NVIC::seal();
     P0::seal();
     RTC0::seal();
-
-    #[cfg(feature = "usb")]
-    pac::POWER::seal();
-    #[cfg(feature = "usb")]
-    pac::USBD::seal();
-
-    // enable interrupts (they are still masked)
-    #[cfg(feature = "usb")]
-    {
-        CLOCK::borrow_unchecked(|clock| {
-            // 'HFXO is stable'
-            clock.INTENSET.write(|w| w.HFCLKSTARTED(1));
-        });
-        pac::POWER::borrow_unchecked(|power| {
-            power
-                .INTENSET
-                .write(|w| w.USBDETECTED(1).USBREMOVED(1).USBPWRRDY(1));
-        });
-        pac::USBD::borrow_unchecked(|usbd| {
-            // enable interrupts
-            usbd.INTENSET.write(|w| {
-                w.USBRESET(1)
-                    .ENDEPIN0(1)
-                    .EP0DATADONE(1)
-                    .ENDEPOUT0(1)
-                    .USBEVENT(1)
-                    .EP0SETUP(1)
-                    .EPDATA(1)
-            });
-        });
-    }
 
     // configure I/O pins
     P0::borrow_unchecked(|p0| {
@@ -86,12 +58,27 @@ unsafe extern "C" fn Reset() {
     });
 
     // unmask interrupts
-    crate::unmask0(&[Interrupt0::POWER_CLOCK, Interrupt0::RTC0]);
-    crate::unmask1(&[Interrupt1::USBD]);
+    crate::unmask0(&[Interrupt0::RTC0]);
+
+    // run initializers
+    extern "C" {
+        static _sinit: usize;
+        static _einit: usize;
+    }
+
+    let mut sinit = &_sinit as *const usize;
+    let einit = &_einit as *const usize;
+    while sinit < einit {
+        let f: unsafe extern "C" fn() = mem::transmute(sinit.read());
+        f();
+        sinit = sinit.add(1);
+    }
 
     extern "Rust" {
         fn main() -> !;
     }
+
+    asm::enable_irq();
 
     main()
 }

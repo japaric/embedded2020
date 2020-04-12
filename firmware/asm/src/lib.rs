@@ -6,12 +6,32 @@
 #![deny(warnings)]
 #![no_std]
 
+/// Masks interrupts
+pub fn disable_irq() {
+    extern "C" {
+        fn __cpsidi();
+    }
+    unsafe { __cpsidi() }
+}
+
+/// Unmasks interrupts
+pub fn enable_irq() {
+    extern "C" {
+        fn __cpsiei();
+    }
+    unsafe { __cpsiei() }
+}
+
 /// Send EVent
 pub fn sev() {
+    #[cfg(target_arch = "arm")]
     extern "C" {
         fn __sev();
     }
-    unsafe { __sev() }
+    #[cfg(target_arch = "arm")]
+    unsafe {
+        __sev()
+    }
 }
 
 /// Wait For Event

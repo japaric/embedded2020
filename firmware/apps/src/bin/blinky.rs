@@ -3,7 +3,7 @@
 
 use core::time::Duration;
 
-use hal::{timer::Timer, led};
+use hal::{led, timer::Timer};
 use panic_never as _; // this program contains zero core::panic* calls
 
 #[no_mangle]

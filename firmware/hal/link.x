@@ -25,7 +25,14 @@ SECTIONS
     . = ALIGN(4);
   } > RAM
 
-  .data ADDR(.rodata) + SIZEOF(.rodata) :
+  .init ADDR(.rodata) + SIZEOF(.rodata) :
+  {
+    _sinit = .;
+    KEEP(*(.init.*));
+    _einit = .;
+  } > RAM
+
+  .data ADDR(.init) + SIZEOF(.init) :
   {
     *(.data .data.*);
     . = ALIGN(4);
@@ -65,6 +72,7 @@ SECTIONS
 }
 
 ASSERT(SIZEOF(.binfmt) < 16384, "SIZEOF(.binfmt) must not exceed 16383 bytes");
+ASSERT(_sinit % 4 == 0 && _einit % 4 == 0, "`.init` section is not 4-byte aligned");
 
 /* Weak exceptions */
 Reserved = 0;

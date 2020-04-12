@@ -1,0 +1,10 @@
+[package]
+authors = ["Jorge Aparicio <jorge@japaric.io>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+name = "tasks"
+publish = false
+version = "0.0.0"
+
+[dependencies]
+tasks-macros = { path = "../../host/tasks-macros" }

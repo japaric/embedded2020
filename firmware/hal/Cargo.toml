@@ -7,9 +7,12 @@ publish = false
 version = "0.0.0"
 
 [dependencies]
+asm = { path = "../asm" }
 binfmt = { path = "../../shared/binfmt" }
 consts = { path = "../../shared/consts" }
+pool = { path = "../pool" }
 semidap = { path = "../semidap" }
+tasks = { path = "../tasks" }
 usbd = { path = "../../shared/usbd", optional = true }
 
 [dependencies.cm]

@@ -4,7 +4,13 @@
 #![deny(warnings)]
 #![no_std]
 
-use core::marker::PhantomData;
+use core::{
+    future::Future,
+    marker::{PhantomData, Unpin},
+    pin::Pin,
+    sync::atomic::{self, Ordering},
+    task::{Context, Poll},
+};
 
 use cm::{DWT, NVIC};
 use pac::FICR;
@@ -15,7 +21,7 @@ mod reset;
 pub mod time;
 pub mod timer;
 #[cfg(feature = "usb")]
-mod usbd;
+pub mod usbd;
 
 /// Reads the 32-bit cycle counter
 pub fn cyccnt() -> u32 {
@@ -42,6 +48,61 @@ impl NotSync {
 }
 
 unsafe impl Send for NotSync {}
+
+struct NotSendOrSync {
+    inner: PhantomData<*mut ()>,
+}
+
+impl NotSendOrSync {
+    fn new() -> Self {
+        Self { inner: PhantomData }
+    }
+}
+
+async fn poll_fn<T, F>(f: F) -> T
+where
+    F: FnMut() -> Poll<T> + Unpin,
+{
+    struct PollFn<F> {
+        f: F,
+    }
+
+    impl<T, F> Future for PollFn<F>
+    where
+        F: FnMut() -> Poll<T> + Unpin,
+    {
+        type Output = T;
+
+        fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<T> {
+            (self.get_mut().f)()
+        }
+    }
+
+    PollFn { f }.await
+}
+
+/// # Safety
+/// Must not be nested
+#[allow(dead_code)]
+unsafe fn atomic0<T>(interrupt: Interrupt0, f: impl FnOnce() -> T) -> T {
+    mask0(&[interrupt]);
+    atomic::compiler_fence(Ordering::SeqCst);
+    let r = f();
+    atomic::compiler_fence(Ordering::SeqCst);
+    unmask0(&[interrupt]);
+    r
+}
+
+/// # Safety
+/// Must not be nested
+unsafe fn atomic1<T>(interrupt: Interrupt1, f: impl FnOnce() -> T) -> T {
+    mask1(&[interrupt]);
+    atomic::compiler_fence(Ordering::SeqCst);
+    let r = f();
+    atomic::compiler_fence(Ordering::SeqCst);
+    unmask1(&[interrupt]);
+    r
+}
 
 #[allow(dead_code)]
 fn mask0(interrupts: &[Interrupt0]) {

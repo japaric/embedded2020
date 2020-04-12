@@ -6,6 +6,10 @@ name = "apps"
 publish = false
 version = "0.0.0"
 
+[[bin]]
+name = "usb"
+required-features = ["usb"]
+
 [dependencies]
 binfmt = { path = "../../shared/binfmt" }
 executor = { path = "../executor" }
@@ -13,3 +17,6 @@ hal = { path = "../hal" }
 panic-abort = { path = "../panic-abort" }
 panic-never = "0.1.0"
 semidap = { path = "../semidap" }
+
+[features]
+usb = ["hal/usb"]

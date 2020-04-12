@@ -6,13 +6,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let target = env::var("TARGET")?;
 
     // place the pre-compiled assembly somewhere the linker can find it
-    fs::copy(
-        format!("bin/{}.a", target),
-        out_dir.join(format!("lib{}.a", pkg_name)),
-    )?;
-    println!("cargo:rustc-link-lib=static={}", pkg_name);
+    if target.starts_with("thumb") {
+        fs::copy(
+            format!("bin/{}.a", target),
+            out_dir.join(format!("lib{}.a", pkg_name)),
+        )?;
+        println!("cargo:rustc-link-lib=static={}", pkg_name);
 
-    println!("cargo:rustc-link-search={}", out_dir.display());
+        println!("cargo:rustc-link-search={}", out_dir.display());
+    }
 
     Ok(())
 }

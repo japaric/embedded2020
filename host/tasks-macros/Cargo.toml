@@ -1,0 +1,18 @@
+[package]
+authors = ["Jorge Aparicio <jorge@japaric.io>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+name = "tasks-macros"
+publish = false
+version = "0.0.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.10"
+quote = "1.0.3"
+
+[dependencies.syn]
+features = ["extra-traits", "full"]
+version = "1.0.17"

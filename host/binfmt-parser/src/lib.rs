@@ -18,7 +18,7 @@ impl fmt::Display for Message<'_> {
         use colored::*;
 
         let timestamp = (self.timestamp as f64) / 1_000_000.;
-        write!(f, "{:>10.6} ", timestamp)?;
+        write!(f, "{:>10.6}s ", timestamp)?;
 
         match self.level {
             Level::Debug => f.write_str("DEBUG ")?,

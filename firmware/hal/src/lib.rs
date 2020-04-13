@@ -49,16 +49,19 @@ impl NotSync {
 
 unsafe impl Send for NotSync {}
 
+#[allow(dead_code)]
 struct NotSendOrSync {
     inner: PhantomData<*mut ()>,
 }
 
+#[allow(dead_code)]
 impl NotSendOrSync {
     fn new() -> Self {
         Self { inner: PhantomData }
     }
 }
 
+#[allow(dead_code)]
 async fn poll_fn<T, F>(f: F) -> T
 where
     F: FnMut() -> Poll<T> + Unpin,
@@ -95,6 +98,7 @@ unsafe fn atomic0<T>(interrupt: Interrupt0, f: impl FnOnce() -> T) -> T {
 
 /// # Safety
 /// Must not be nested
+#[allow(dead_code)]
 unsafe fn atomic1<T>(interrupt: Interrupt1, f: impl FnOnce() -> T) -> T {
     mask1(&[interrupt]);
     atomic::compiler_fence(Ordering::SeqCst);

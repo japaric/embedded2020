@@ -1,6 +1,9 @@
 #![deny(warnings)]
 
-use core::fmt::{self, Write as _};
+use core::{
+    cmp::Ordering,
+    fmt::{self, Write as _},
+};
 use std::collections::BTreeMap;
 
 use binfmt::{Level, Tag};
@@ -8,17 +11,71 @@ use binfmt::{Level, Tag};
 /// Log message
 pub struct Message<'f> {
     pub level: Level,
-    pub timestamp: u32,
+    pub timestamp: Timestamp,
     pub footprint: &'f str,
     pub args: Vec<Node<'f>>,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum Timestamp {
+    Absolute(u32),
+    Delta(u32),
+}
+
+impl PartialOrd for Timestamp {
+    fn partial_cmp(&self, rhs: &Self) -> Option<Ordering> {
+        Some(self.cmp(&rhs))
+    }
+}
+
+impl Ord for Timestamp {
+    fn cmp(&self, rhs: &Self) -> Ordering {
+        match (self, rhs) {
+            (Timestamp::Absolute(lhs), Timestamp::Absolute(rhs)) => lhs.cmp(&rhs),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Message<'_> {
+    pub fn absolute(&self) -> Option<u32> {
+        if let Timestamp::Absolute(ts) = self.timestamp {
+            Some(ts)
+        } else {
+            None
+        }
+    }
+
+    pub fn delta(&mut self, last: u32) {
+        if let Timestamp::Absolute(ts) = self.timestamp {
+            if ts > last {
+                let delta = ts - last;
+                if delta < 1_000_000 {
+                    self.timestamp = Timestamp::Delta(delta);
+                }
+            }
+        }
+    }
 }
 
 impl fmt::Display for Message<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use colored::*;
 
-        let timestamp = (self.timestamp as f64) / 1_000_000.;
-        write!(f, "{:>10.6}s ", timestamp)?;
+        match self.timestamp {
+            Timestamp::Absolute(ts) => {
+                write!(
+                    f,
+                    "{:3}.{:03}_{:03}s ",
+                    ts / 1_000_000,
+                    (ts / 1_000) % 1_000,
+                    ts % 1_000
+                )?;
+            }
+            Timestamp::Delta(ts) => {
+                write!(f, "  +.{:03}_{:03}s ", ts / 1_000, ts % 1_000)?;
+            }
+        }
 
         match self.level {
             Level::Debug => f.write_str("DEBUG ")?,
@@ -238,7 +295,7 @@ pub fn parse_message<'f>(
     Ok((
         Message {
             level,
-            timestamp,
+            timestamp: Timestamp::Absolute(timestamp),
             footprint,
             args,
         },
@@ -336,7 +393,7 @@ pub fn parse_node<'f>(
             let (val, i) = leb128_decode_u32(&bytes[consumed..])?;
             consumed += i;
             Ok((Node::I32(unzigzag(val)), consumed))
-        },
+        }
 
         Tag::Debug | Tag::Error | Tag::Info | Tag::Trace | Tag::Warn => unreachable!(),
     }

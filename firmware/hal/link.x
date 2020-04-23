@@ -90,6 +90,8 @@ PROVIDE(SysTick = DefaultHandler);
 
 /* Weak interrupts */
 PROVIDE(POWER_CLOCK = DefaultHandler);
+PROVIDE(POWER = DefaultHandler);
+PROVIDE(CLOCK = DefaultHandler);
 PROVIDE(RADIO = DefaultHandler);
 PROVIDE(UARTE0_UART0 = DefaultHandler);
 PROVIDE(SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0 = DefaultHandler);

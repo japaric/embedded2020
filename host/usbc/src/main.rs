@@ -3,7 +3,7 @@ use std::env;
 
 use anyhow::{ensure, format_err};
 
-const TIMEOUT: Duration = Duration::from_millis(10);
+const TIMEOUT: Duration = Duration::from_millis(100);
 const EPOUT1: u8 = 0x01;
 const EPIN1: u8 = 0x81;
 

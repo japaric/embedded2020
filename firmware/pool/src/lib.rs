@@ -94,6 +94,9 @@ macro_rules! pool {
         }
 
         impl $ident {
+            /// The size of the memory blocks managed by this pool
+            pub const SIZE: usize = $N;
+
             /// Tries to acquire a memory block
             #[allow(dead_code)]
             pub fn try_alloc() -> Option<$crate::Box<$ident>> {

@@ -1,22 +1,31 @@
 //! Hardware Abstraction Layer
 
-#![deny(missing_docs)]
-#![deny(warnings)]
+// #![deny(missing_docs)]
+#![allow(warnings)]
+// #![deny(warnings)]
 #![no_std]
 
 use core::{
     future::Future,
     marker::{PhantomData, Unpin},
     pin::Pin,
-    sync::atomic::{self, Ordering},
+    sync::{self, atomic::Ordering},
     task::{Context, Poll},
 };
 
 use cm::{DWT, NVIC};
 use pac::FICR;
 
+#[macro_use]
+mod atomic;
+
+#[cfg(any(feature = "radio", feature = "usb"))]
+mod clock;
 mod errata;
 pub mod led;
+mod mem;
+#[cfg(feature = "radio")]
+pub mod radio;
 mod reset;
 pub mod time;
 pub mod timer;
@@ -89,9 +98,9 @@ where
 #[allow(dead_code)]
 unsafe fn atomic0<T>(interrupt: Interrupt0, f: impl FnOnce() -> T) -> T {
     mask0(&[interrupt]);
-    atomic::compiler_fence(Ordering::SeqCst);
+    sync::atomic::compiler_fence(Ordering::SeqCst);
     let r = f();
-    atomic::compiler_fence(Ordering::SeqCst);
+    sync::atomic::compiler_fence(Ordering::SeqCst);
     unmask0(&[interrupt]);
     r
 }
@@ -101,9 +110,9 @@ unsafe fn atomic0<T>(interrupt: Interrupt0, f: impl FnOnce() -> T) -> T {
 #[allow(dead_code)]
 unsafe fn atomic1<T>(interrupt: Interrupt1, f: impl FnOnce() -> T) -> T {
     mask1(&[interrupt]);
-    atomic::compiler_fence(Ordering::SeqCst);
+    sync::atomic::compiler_fence(Ordering::SeqCst);
     let r = f();
-    atomic::compiler_fence(Ordering::SeqCst);
+    sync::atomic::compiler_fence(Ordering::SeqCst);
     unmask1(&[interrupt]);
     r
 }
@@ -214,4 +223,19 @@ pub enum Interrupt1 {
     CRYPTOCELL = 42,
     PWM3 = 45,
     SPIM3 = 47,
+}
+
+// split this interrupt -- it makes my life much easier
+#[cfg(any(feature = "ieee802154", feature = "usb"))]
+#[no_mangle]
+unsafe extern "C" fn POWER_CLOCK() {
+    extern "C" {
+        fn CLOCK();
+        #[cfg(feature = "usb")]
+        fn POWER();
+    }
+
+    CLOCK();
+    #[cfg(feature = "usb")]
+    POWER();
 }

@@ -15,6 +15,7 @@ CLOCK = []
 FICR = []
 P0 = []
 POWER = []
+RADIO = []
 RTC0 = []
 USBD = []
 # mainly used to generate docs
@@ -23,6 +24,7 @@ all = [
   "FICR",
   "P0",
   "POWER",
+  "RADIO",
   "RTC0",
   "USBD",
 ]

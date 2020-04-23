@@ -138,7 +138,7 @@ fn peripheral(peripheral: &Peripheral<'_>) -> TokenStream2 {
                 let taken = Self::taken();
 
                 if taken
-                    .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)
+                    .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
                     .is_ok()
                 {
                     Some(unsafe{Self::new()})

@@ -20,9 +20,8 @@ use usbd::{
     ep, iface, DescriptorType, Direction,
 };
 
-use crate::{Interrupt1, NotSendOrSync};
+use crate::{atomic::Atomic, mem::P, Interrupt1, NotSendOrSync};
 
-const PACKET_SIZE: u8 = 64;
 const NCONFIGS: u8 = 1;
 
 const DEVICE_DESC: device::Desc = device::Desc {
@@ -74,7 +73,7 @@ const EPIN1_DESC: ep::Desc = ep::Desc {
     bInterval: 0,
     bmAttributes: ep::bmAttributes::Bulk,
     wMaxPacketSize: ep::wMaxPacketSize::BulkControl {
-        size: PACKET_SIZE as u16,
+        size: Packet::CAPACITY as u16,
     },
 };
 
@@ -86,7 +85,7 @@ const EPOUT1_DESC: ep::Desc = ep::Desc {
     bInterval: 0,
     bmAttributes: ep::bmAttributes::Bulk,
     wMaxPacketSize: ep::wMaxPacketSize::BulkControl {
-        size: PACKET_SIZE as u16,
+        size: Packet::CAPACITY as u16,
     },
 };
 
@@ -120,7 +119,7 @@ fn full_config() -> [u8; FULL_CONFIG_SIZE as usize] {
 }
 
 static EPIN1_BUSY: AtomicBool = AtomicBool::new(false);
-static EPOUT1_STATE: AtomicEpOut1State = AtomicEpOut1State::new(EpOut1State::Idle);
+static EPOUT1_STATE: Atomic<EpOut1State> = Atomic::new();
 static EPOUT1_SIZE: AtomicU8 = AtomicU8::new(0);
 
 #[tasks::declare]
@@ -130,19 +129,19 @@ mod task {
     use pac::{CLOCK, USBD};
     use pool::{Box, Node};
 
-    use crate::{errata, Interrupt0, Interrupt1};
+    use crate::{clock, errata, mem::P, Interrupt0, Interrupt1};
 
     use super::{
-        Ep0State, EpOut1State, PowerClockEvent, PowerClockState, UsbdEvent, EPIN1_BUSY,
-        EPOUT1_SIZE, EPOUT1_STATE, P, PACKET_SIZE,
+        Ep0State, EpOut1State, Packet, PowerEvent, PowerState, UsbdEvent, EPIN1_BUSY, EPOUT1_SIZE,
+        EPOUT1_STATE,
     };
 
-    static mut PCSTATE: PowerClockState = PowerClockState::Off;
+    static mut PCSTATE: PowerState = PowerState::Off;
 
     // NOTE(unsafe) all interrupts are still globally masked (`CPSID I`)
     fn init() {
         #[uninit(unsafe)]
-        static mut PACKETS: [MaybeUninit<Node<[u8; PACKET_SIZE as usize]>>; 3] = [
+        static mut PACKETS: [MaybeUninit<Node<[u8; P::SIZE]>>; 3] = [
             MaybeUninit::uninit(),
             MaybeUninit::uninit(),
             MaybeUninit::uninit(),
@@ -180,44 +179,38 @@ mod task {
         }
     }
 
-    fn POWER_CLOCK() -> Option<()> {
-        semidap::trace!("POWER_CLOCK");
+    fn POWER() -> Option<()> {
+        semidap::trace!("POWER");
 
-        let event = PowerClockEvent::next()?;
-        semidap::debug!("-> {}", event);
+        let event = PowerEvent::next();
+        if let Some(event) = event {
+            semidap::debug!("-> {}", event);
+        }
 
         match PCSTATE {
-            PowerClockState::Off => {
-                if event != PowerClockEvent::USBDETECTED {
+            PowerState::Off => {
+                if event? != PowerEvent::USBDETECTED {
                     #[cfg(debug_assertions)]
                     super::unreachable()
                 }
 
                 // turn on the USB peripheral
                 unsafe { errata::e187a() }
-                USBD::borrow_unchecked(|usbd| {
-                    usbd.ENABLE.write(|w| w.ENABLE(1));
-                });
+                USBD::borrow_unchecked(|usbd| usbd.ENABLE.write(|w| w.ENABLE(1)));
 
-                // start the HF clock
-                CLOCK::borrow_unchecked(|clock| {
-                    clock.TASKS_HFCLKSTART.write(|w| w.TASKS_HFCLKSTART(1));
-                });
+                semidap::info!("enabled the USB peripheral");
 
-                semidap::info!("enabled USB and started HFXO");
-
-                *PCSTATE = PowerClockState::RampUp {
-                    clock: false,
+                *PCSTATE = PowerState::RampUp {
+                    clock: clock::is_stable(),
                     power: false,
                     usb: false,
                 };
             }
 
-            PowerClockState::RampUp { clock, power, usb } => {
-                if !*clock && event == PowerClockEvent::HFCLKSTARTED {
+            PowerState::RampUp { clock, power, usb } => {
+                if !*clock && event.is_none() {
                     *clock = true;
-                    semidap::info!("HFXO is stable");
-                } else if !*power && event == PowerClockEvent::USBPWRRDY {
+                } else if !*power && event? == PowerEvent::USBPWRRDY {
                     *power = true;
                     semidap::info!("USB power supply ready");
                 } else {
@@ -226,13 +219,13 @@ mod task {
                 }
 
                 if *clock && *power && *usb {
-                    *PCSTATE = PowerClockState::Ready;
+                    *PCSTATE = PowerState::Ready;
                     super::connect();
                 }
             }
 
             // TODO handle powering down the HFXO?
-            PowerClockState::Ready => super::todo(),
+            PowerState::Ready => super::todo(),
         }
 
         None
@@ -249,13 +242,13 @@ mod task {
         semidap::debug!("-> {}", event);
 
         match PCSTATE {
-            PowerClockState::Off =>
+            PowerState::Off =>
             {
                 #[cfg(debug_assertions)]
                 super::unreachable()
             }
 
-            PowerClockState::RampUp { clock, power, usb } => {
+            PowerState::RampUp { clock, power, usb } => {
                 if !*usb && event == UsbdEvent::USBEVENT {
                     #[cfg(debug_assertions)]
                     if super::EVENTCAUSE().READY() == 0 {
@@ -266,7 +259,7 @@ mod task {
                     semidap::info!("USB controller is ready");
 
                     if *clock && *power && *usb {
-                        *PCSTATE = PowerClockState::Ready;
+                        *PCSTATE = PowerState::Ready;
                         super::connect();
                     }
                 } else {
@@ -275,7 +268,7 @@ mod task {
                 }
             }
 
-            PowerClockState::Ready => match event {
+            PowerState::Ready => match event {
                 UsbdEvent::USBEVENT => {
                     let eventcause = super::EVENTCAUSE();
 
@@ -326,7 +319,13 @@ mod task {
 
                 UsbdEvent::ENDEPIN1 => {
                     // return memory to the pool
-                    unsafe { drop(Box::<P>::from_raw(super::EPOUT1_PTR() as *mut _)) }
+                    unsafe {
+                        drop(Box::<P>::from_raw(
+                            (super::EPIN1_PTR() as *mut u8)
+                                .offset(-(Packet::PADDING as isize))
+                                .cast(),
+                        ))
+                    }
                     semidap::info!("EPIN1: memory freed");
                 }
 
@@ -559,7 +558,7 @@ pub fn claim() -> (BulkIn, BulkOut) {
     static ONCE: AtomicBool = AtomicBool::new(false);
 
     if ONCE
-        .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)
+        .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
         .is_ok()
     {
         (
@@ -598,7 +597,8 @@ impl BulkOut {
                 let state = EPOUT1_STATE.load();
                 match state {
                     EpOut1State::Idle | EpOut1State::DataReady => {
-                        usbd.EPOUT1_PTR.write(|w| w.PTR(packet.as_mut_ptr() as u32));
+                        usbd.EPOUT1_PTR
+                            .write(|w| w.PTR(packet.data_ptr_mut() as u32));
 
                         if state == EpOut1State::DataReady {
                             size = SIZE_EPOUT1();
@@ -678,8 +678,8 @@ impl BulkIn {
 
             // NOTE(fence) the next store hands the `packet` to the USBD task
             atomic::compiler_fence(Ordering::Release);
-            usbd.EPIN1_PTR
-                .write(|w| w.PTR(packet.buffer.into_raw() as u32));
+            usbd.EPIN1_PTR.write(|w| w.PTR(packet.data_ptr() as u32));
+            mem::forget(packet);
             usbd.EPIN1_MAXCNT.write(|w| w.MAXCNT(len));
             EPIN1_BUSY.store(true, Ordering::Relaxed);
 
@@ -697,6 +697,11 @@ pub struct Packet {
 }
 
 impl Packet {
+    /// How much data this packet can hold
+    pub const CAPACITY: u8 = 64;
+
+    const PADDING: usize = 4;
+
     /// Returns an empty USB packet
     pub async fn new() -> Self {
         Self {
@@ -707,10 +712,10 @@ impl Packet {
 
     /// Fills the packet with given `src` data
     ///
-    /// `src` data will be truncated to `64` bytes
+    /// NOTE `src` data will be truncated to `Self::CAPACITY` bytes
     pub fn copy_from_slice(&mut self, src: &[u8]) {
-        let len = cmp::min(src.len(), PACKET_SIZE as usize);
-        unsafe { ptr::copy_nonoverlapping(src.as_ptr(), self.buffer.as_mut_ptr(), len) }
+        let len = cmp::min(src.len(), Packet::CAPACITY as usize);
+        unsafe { ptr::copy_nonoverlapping(src.as_ptr(), self.data_ptr_mut(), len) }
         self.len = len as u8;
     }
 
@@ -721,9 +726,22 @@ impl Packet {
 
     /// Changes the `len` of the packet
     ///
-    /// NOTE `len` will be truncated to `64` bytes
+    /// NOTE `len` will be truncated to `Self::CAPACITY` bytes
     pub fn set_len(&mut self, len: u8) {
-        self.len = cmp::min(len, PACKET_SIZE);
+        self.len = cmp::min(len, Packet::CAPACITY);
+    }
+
+    #[cfg(feature = "radio")]
+    pub(crate) unsafe fn from_parts(buffer: Box<P>, len: u8) -> Self {
+        Self { buffer, len }
+    }
+
+    fn data_ptr(&self) -> *const u8 {
+        unsafe { self.buffer.as_ptr().add(Self::PADDING) }
+    }
+
+    fn data_ptr_mut(&mut self) -> *mut u8 {
+        unsafe { self.buffer.as_mut_ptr().add(Self::PADDING) }
     }
 }
 
@@ -731,19 +749,21 @@ impl ops::Deref for Packet {
     type Target = [u8];
 
     fn deref(&self) -> &[u8] {
-        unsafe { slice::from_raw_parts(self.buffer.as_ptr(), self.len.into()) }
+        unsafe { slice::from_raw_parts(self.data_ptr(), self.len.into()) }
     }
 }
 
 impl ops::DerefMut for Packet {
     fn deref_mut(&mut self) -> &mut [u8] {
-        unsafe { slice::from_raw_parts_mut(self.buffer.as_mut_ptr(), self.len.into()) }
+        unsafe { slice::from_raw_parts_mut(self.data_ptr_mut(), self.len.into()) }
     }
 }
 
-pool!(
-    #[doc(hidden)]
-    pub P: [u8; PACKET_SIZE as usize]);
+impl From<Packet> for crate::radio::Packet {
+    fn from(packet: Packet) -> crate::radio::Packet {
+        crate::radio::Packet::from_parts(packet.buffer, packet.len)
+    }
+}
 
 #[derive(Clone, Copy, PartialEq)]
 enum Ep0State {
@@ -760,67 +780,41 @@ enum EpOut1State {
     TransferInProgress = 3,
 }
 
-struct AtomicEpOut1State {
-    inner: AtomicU8,
-}
-
-impl AtomicEpOut1State {
-    const fn new(state: EpOut1State) -> Self {
-        Self {
-            inner: AtomicU8::new(state as u8),
-        }
-    }
-
-    fn load(&self) -> EpOut1State {
-        unsafe { mem::transmute(self.inner.load(Ordering::Relaxed)) }
-    }
-
-    fn store(&self, state: EpOut1State) {
-        self.inner.store(state as u8, Ordering::Relaxed)
-    }
-}
+derive!(EpOut1State);
 
 #[derive(Clone, Copy)]
-enum PowerClockState {
+enum PowerState {
     Off,
     RampUp { clock: bool, power: bool, usb: bool },
     Ready,
 }
 
 #[derive(Clone, Copy, PartialEq, binDebug)]
-enum PowerClockEvent {
+enum PowerEvent {
     USBDETECTED,
     USBREMOVED,
     USBPWRRDY,
-    HFCLKSTARTED,
 }
 
-impl PowerClockEvent {
+impl PowerEvent {
     fn next() -> Option<Self> {
         POWER::borrow_unchecked(|power| {
             if power.EVENTS_USBDETECTED.read().bits() != 0 {
                 power.EVENTS_USBDETECTED.zero();
-                return Some(PowerClockEvent::USBDETECTED);
+                return Some(PowerEvent::USBDETECTED);
             }
 
             if power.EVENTS_USBREMOVED.read().bits() != 0 {
                 power.EVENTS_USBREMOVED.zero();
-                return Some(PowerClockEvent::USBREMOVED);
+                return Some(PowerEvent::USBREMOVED);
             }
 
             if power.EVENTS_USBPWRRDY.read().bits() != 0 {
                 power.EVENTS_USBPWRRDY.zero();
-                return Some(PowerClockEvent::USBPWRRDY);
+                return Some(PowerEvent::USBPWRRDY);
             }
 
-            CLOCK::borrow_unchecked(|clock| {
-                if clock.EVENTS_HFCLKSTARTED.read().bits() != 0 {
-                    clock.EVENTS_HFCLKSTARTED.zero();
-                    return Some(PowerClockEvent::HFCLKSTARTED);
-                }
-
-                None
-            })
+            None
         })
     }
 }
@@ -950,6 +944,11 @@ fn SIZE_EPOUT1() -> u8 {
 #[allow(non_snake_case)]
 fn EPINEN() -> epinen::R {
     USBD::borrow_unchecked(|usbd| usbd.EPINEN.read())
+}
+
+#[allow(non_snake_case)]
+fn EPIN1_PTR() -> u32 {
+    USBD::borrow_unchecked(|usbd| usbd.EPIN1_PTR.read().bits())
 }
 
 #[allow(non_snake_case)]

@@ -11,7 +11,7 @@ use core::{
 use std::{
     borrow::Cow,
     collections::btree_map::{self, BTreeMap},
-    fs,
+    env, fs,
     io::{self, Write},
     path::PathBuf,
     process,
@@ -196,7 +196,14 @@ fn not_main() -> Result<i32, anyhow::Error> {
 
     range_names.sort_unstable_by(|a, b| a.0.start.cmp(&b.0.start));
 
-    let mut dap = Dap::open(opts.vendor, opts.product)?;
+    let mut dap = Dap::open(
+        opts.vendor,
+        opts.product,
+        env::var("SEMIDAP_SN").ok().as_ref().map(|s| &s[..]),
+    )?;
+    if let Some(sn) = dap.serial_number() {
+        info!("DAP S/N: {}", sn);
+    }
     let debug_frame = debug_frame.ok_or_else(|| anyhow!("`.debug_frame` section is missing"))?;
 
     // FIXME this is not robust enough; when the process is killed (e.g. by
@@ -259,6 +266,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
     let mut reads: Vec<u16> = (0..ncursors).map(|_| 0).collect();
     // do proper clean-up on Ctrl-C
     ctrlc::set_handler(|| CONTINUE.store(false, Ordering::Relaxed))?;
+    let mut last_ts = None;
     while CONTINUE.load(Ordering::Relaxed) {
         fn drain(
             cursorp: u32,
@@ -343,8 +351,13 @@ fn not_main() -> Result<i32, anyhow::Error> {
             // FIXME this will still result in unordered messages
             messages.sort_by_key(|(_, m)| m.timestamp);
 
-            for (src, message) in messages {
+            for (src, mut message) in messages {
+                let curr = message.absolute();
+                if let Some(last) = last_ts {
+                    message.delta(last);
+                }
                 writeln!(stdout, "{}>{}", src, message)?;
+                last_ts = curr;
             }
         }
 

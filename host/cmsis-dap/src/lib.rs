@@ -55,9 +55,13 @@ const DEFAULT_WAIT_RETRY: u16 = 1;
 
 impl crate::Dap {
     /// Opens the DAP Debug Unit that matches the given vendor and product IDs
-    pub fn open(vendor: u16, product: u16) -> Result<Self, anyhow::Error> {
+    pub fn open(vendor: u16, product: u16, sn: Option<&str>) -> Result<Self, anyhow::Error> {
         let hid = HidApi::new()?;
-        let device = hid.open(vendor, product)?;
+        let device = if let Some(sn) = sn {
+            hid.open_serial(vendor, product, sn)?
+        } else {
+            hid.open(vendor, product)?
+        };
 
         let mut dap = Self {
             buffer: Box::new([crate::hid::REPORT_ID; 5]),
@@ -80,6 +84,11 @@ impl crate::Dap {
         dap.buffer = Box::<[u8]>::from(vec![0; usize::from(dap.packet_size)]);
 
         Ok(dap)
+    }
+
+    /// Returns the USB serial number
+    pub fn serial_number(&self) -> Option<String> {
+        self.device.get_serial_number_string().unwrap_or(None)
     }
 
     /// Configures the Debug Unit to use the SWD interface, puts the target in SWD mode and powers

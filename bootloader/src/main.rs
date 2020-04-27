@@ -1,12 +1,12 @@
 #![deny(warnings)]
-#![feature(llvm_asm)]
 #![no_main]
 #![no_std]
 
-use core::{mem, panic::PanicInfo};
+use core::mem;
 
 use cm::SCB;
 use pac::P0;
+use panic_never as _; // this bootloader contains no panicking branches
 
 #[cfg(debug_assertions)]
 compile_error!("must be compiled in release mode");
@@ -61,15 +61,11 @@ unsafe extern "C" fn Reset() -> ! {
 
         let reset = vectors[1];
 
-        // set link register to its reset value
-        // set the main stack pointer to the value in the new vector table
-        // branch into the Reset handler indicated in the new vector table
-        llvm_asm!("
-mov R14, 0xffffffff
-msr MSP, $0
-bx $1
-" : : "r"(initial_sp) "r"(reset) : : "volatile");
-        core::hint::unreachable_unchecked()
+        extern "C" {
+            fn __jump(initial_sp: usize, reset: usize) -> !;
+        }
+
+        __jump(initial_sp, reset)
     } else {
         loop {
             continue;
@@ -88,17 +84,5 @@ unsafe extern "C" fn DefaultHandler() -> ! {
 
     loop {
         continue;
-    }
-}
-
-// this bootloader contains no panicking branches
-#[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    extern "C" {
-        fn forbidden() -> !;
-    }
-
-    unsafe {
-        forbidden();
     }
 }

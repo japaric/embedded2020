@@ -21,7 +21,7 @@ $ # on one terminal
 $ openocd
 
 $ # on another terminal
-$ cargo +nightly r --release
+$ cargo r --release
 ```
 
 # How it works

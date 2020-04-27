@@ -7,9 +7,8 @@ MEMORY
 
 ENTRY(Reset);
 
-/* the stack grows downwards. By placing at the beginning (lowest address) of */
-/* the RAM region we make any stack usage immediately result in a `HardFault` */
-__stack_top__ = ORIGIN(RAM);
+/* maximum stack usage = 8 bytes */
+__stack_top__ = ORIGIN(RAM) + 8;
 
 SECTIONS
 {

@@ -27,3 +27,4 @@ overflow-checks = false
 [dependencies]
 cm = { path = "../shared/cm", features = ["SCB"] }
 pac = { path = "../firmware/pac", features = ["P0"] }
+panic-never = "0.1.0"

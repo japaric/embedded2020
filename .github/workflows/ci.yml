@@ -13,9 +13,10 @@ jobs:
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
-          profile: minimal
-          toolchain: beta # TODO stable when 1.44 is out
           override: true
+          profile: minimal
+          target: thumbv7em-none-eabi
+          toolchain: beta # TODO stable when 1.44 is out
 
       - name: Check bootloader
         uses: marcopolo/cargo@master
@@ -48,10 +49,11 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
-          profile: minimal
-          toolchain: nightly
-          override: true
           components: rustfmt, clippy
+          override: true
+          profile: minimal
+          target: thumbv7em-none-eabi
+          toolchain: nightly
 
       - name: Format bootloader
         uses: marcopolo/cargo@master

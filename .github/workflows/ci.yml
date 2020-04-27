@@ -18,12 +18,6 @@ jobs:
           target: thumbv7em-none-eabi
           toolchain: beta # TODO stable when 1.44 is out
 
-      - name: Check bootloader
-        uses: marcopolo/cargo@master
-        with:
-          command: check
-          working-directory: ./bootloader
-
       - name: Check host
         uses: marcopolo/cargo@master
         with:
@@ -36,6 +30,12 @@ jobs:
           command: run
           working-directory: ./host/regen
 
+      - name: Check bootloader
+        uses: marcopolo/cargo@master
+        with:
+          command: check
+          working-directory: ./bootloader
+
       - name: Check firmware
         uses: marcopolo/cargo@master
         with:
@@ -43,7 +43,7 @@ jobs:
           working-directory: ./firmware
 
   lints:
-    name: Lints
+    name: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -83,13 +83,6 @@ jobs:
           args: --all -- --check
           working-directory: ./shared
 
-      - name: Clippy bootloader
-        uses: marcopolo/cargo@master
-        with:
-          command: clippy
-          args: -- -D warnings
-          working-directory: ./bootloader
-
       - name: Clippy host
         uses: marcopolo/cargo@master
         with:
@@ -102,6 +95,13 @@ jobs:
         with:
           command: run
           working-directory: ./host/regen
+
+      - name: Clippy bootloader
+        uses: marcopolo/cargo@master
+        with:
+          command: clippy
+          args: -- -D warnings
+          working-directory: ./bootloader
 
       - name: Clippy firmware
         uses: marcopolo/cargo@master

@@ -1,0 +1,8 @@
+# only so we can run `cargo fmt (..)`
+[workspace]
+members = [
+  "binfmt",
+  "cm",
+  "consts",
+  "usbd",
+]

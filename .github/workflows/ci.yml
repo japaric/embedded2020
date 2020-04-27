@@ -18,17 +18,17 @@ jobs:
           target: thumbv7em-none-eabi
           toolchain: beta # TODO stable when 1.44 is out
 
-      - name: Check host
-        uses: marcopolo/cargo@master
-        with:
-          command: check
-          working-directory: ./host
-
       - name: Generate PAC
         uses: marcopolo/cargo@master
         with:
           command: run
           working-directory: ./host/regen
+
+      - name: Check host
+        uses: marcopolo/cargo@master
+        with:
+          command: check
+          working-directory: ./host
 
       - name: Check bootloader
         uses: marcopolo/cargo@master
@@ -83,18 +83,18 @@ jobs:
           args: --all -- --check
           working-directory: ./shared
 
+      - name: Generate PAC
+        uses: marcopolo/cargo@master
+        with:
+          command: run
+          working-directory: ./host/regen
+
       - name: Clippy host
         uses: marcopolo/cargo@master
         with:
           command: clippy
           args: -- -D warnings
           working-directory: ./host
-
-      - name: Generate PAC
-        uses: marcopolo/cargo@master
-        with:
-          command: run
-          working-directory: ./host/regen
 
       - name: Clippy bootloader
         uses: marcopolo/cargo@master

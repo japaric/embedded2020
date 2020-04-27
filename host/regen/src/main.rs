@@ -12,9 +12,7 @@ pub mod opt;
 mod translate;
 mod verify;
 
-use std::{fs, path::Path, process::Command};
-
-use anyhow::bail;
+use std::{fs, path::Path};
 
 fn main() -> Result<(), anyhow::Error> {
     gen_cm(Path::new("../../shared/cm/src/lib.rs"))?;
@@ -33,8 +31,7 @@ fn gen_nrf52(lib: &Path) -> Result<(), anyhow::Error> {
     let dev = svd_parser::parse(&xml)?;
     let mut dev = translate::svd::device(&dev, AUDITED);
     audit_nrf52(&mut dev);
-    gen(dev, lib)?;
-    check_lib(lib)
+    gen(dev, lib)
 }
 
 fn audit_nrf52(dev: &mut ir::Device<'_>) {
@@ -87,8 +84,7 @@ fn audit_nrf52(dev: &mut ir::Device<'_>) {
 
 fn gen_cm(lib: &Path) -> Result<(), anyhow::Error> {
     let dev = cm::device();
-    gen(dev, lib)?;
-    check_lib(lib)
+    gen(dev, lib)
 }
 
 fn gen(mut dev: ir::Device<'_>, lib: &Path) -> Result<(), anyhow::Error> {
@@ -98,33 +94,5 @@ fn gen(mut dev: ir::Device<'_>, lib: &Path) -> Result<(), anyhow::Error> {
     opt::device(&mut dev);
     let krate = codegen::device(&dev);
     fs::write(lib, krate)?;
-    Ok(())
-}
-
-fn check_lib(lib: &Path) -> Result<(), anyhow::Error> {
-    let dir = lib.parent().expect("UNREACHABLE");
-
-    if !Command::new("rustfmt").arg(lib).status()?.success() {
-        bail!("`rustfmt` failed");
-    }
-
-    if !Command::new("cargo")
-        .arg("clippy")
-        .current_dir(dir)
-        .status()?
-        .success()
-    {
-        bail!("`cargo` failed");
-    }
-
-    if !Command::new("cargo")
-        .arg("doc")
-        .current_dir(dir)
-        .status()?
-        .success()
-    {
-        bail!("`cargo` failed");
-    }
-
     Ok(())
 }

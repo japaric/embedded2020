@@ -1,5 +1,5 @@
 #![deny(warnings)]
-#![feature(asm)]
+#![feature(llvm_asm)]
 #![no_main]
 #![no_std]
 
@@ -35,19 +35,20 @@ unsafe extern "C" fn Reset() -> ! {
     // validate the vector table
     // the initial value of the Stack Pointer must be 8-byte aligned
     // all vectors must be odd addresses (thumb bit set to 1)
+    let check_vector = |(i, vector): (usize, &usize)| {
+        if (7..11).contains(&i)
+            || i == 13
+            || (46..48).contains(&i)
+            || (59..61).contains(&i)
+            || i == 62
+        {
+            *vector == 0
+        } else {
+            vector % 2 == 1
+        }
+    };
     if initial_sp % mem::size_of::<u64>() == 0
-        && vectors.iter().enumerate().skip(1).all(|(i, vector)| {
-            if (7..11).contains(&i)
-                || i == 13
-                || (46..48).contains(&i)
-                || (59..61).contains(&i)
-                || i == 62
-            {
-                *vector == 0
-            } else {
-                vector % 2 == 1
-            }
-        })
+        && vectors.iter().enumerate().skip(1).all(check_vector)
     {
         SCB::borrow_unchecked(|scb| scb.VTOR.write(|w| w.TBLOFF(new_vtor as u32 >> 7)));
 
@@ -63,7 +64,7 @@ unsafe extern "C" fn Reset() -> ! {
         // set link register to its reset value
         // set the main stack pointer to the value in the new vector table
         // branch into the Reset handler indicated in the new vector table
-        asm!("
+        llvm_asm!("
 mov R14, 0xffffffff
 msr MSP, $0
 bx $1

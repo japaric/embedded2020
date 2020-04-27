@@ -22,7 +22,7 @@ impl<T> Mutex<T> {
     }
 
     /// Attempts to acquire the lock
-    pub fn try_lock<'m>(&'m self) -> Option<MutexGuard<'m, T>> {
+    pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
         if self.locked.get() {
             None
         } else {
@@ -32,7 +32,7 @@ impl<T> Mutex<T> {
     }
 
     /// Acquires the lock
-    pub fn lock<'m>(&'m self) -> impl Future<Output = MutexGuard<'m, T>> {
+    pub fn lock(&self) -> impl Future<Output = MutexGuard<'_, T>> {
         struct Lock<'a, T> {
             mutex: &'a Mutex<T>,
         }

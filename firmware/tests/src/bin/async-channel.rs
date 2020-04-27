@@ -7,8 +7,8 @@ use panic_never as _; // this program contains zero core::panic* calls
 
 #[no_mangle]
 fn main() -> ! {
-    let mut c = Channel::new();
-    let (mut s, mut r) = c.split();
+    let mut ch = Channel::new();
+    let (mut s, mut r) = ch.split();
 
     let a = async {
         semidap::info!("A: before recv");

@@ -26,7 +26,7 @@ impl<T> Channel<T> {
     }
 
     /// Splits the channel in `sender` and `receiver` endpoints
-    pub fn split<'c>(&'c mut self) -> (Sender<'c, T>, Receiver<'c, T>) {
+    pub fn split(&mut self) -> (Sender<'_, T>, Receiver<'_, T>) {
         let channel = self;
         (Sender { channel }, Receiver { channel })
     }

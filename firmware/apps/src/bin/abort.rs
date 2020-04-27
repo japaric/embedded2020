@@ -14,7 +14,9 @@ fn main() -> ! {
 fn foo(recurse: bool) {
     let mut x = [0];
     let y = x.as_mut_ptr(); // use the stack
-    unsafe { drop((&y as *const *mut i32).read_volatile()) }
+    unsafe {
+        (&y as *const *mut i32).read_volatile();
+    }
 
     if recurse {
         foo(false)

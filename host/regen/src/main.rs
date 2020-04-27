@@ -50,41 +50,37 @@ fn audit_nrf52(dev: &mut ir::Device<'_>) {
             }
         }
 
-        match &*periph.name {
-            // Fix bitfield widths to match the OPS
-            "TWIM0" => {
-                for reg in &mut periph.registers {
-                    match &*reg.name {
-                        "RXD_AMOUNT" | "TXD_AMOUNT" => {
-                            for field in reg.r_fields.iter_mut().chain(&mut reg.w_fields) {
-                                if field.name == "AMOUNT" {
-                                    field.width = 8;
-                                }
+        // Fix bitfield widths to match the OPS
+        if periph.name == "TWIM0" {
+            for reg in &mut periph.registers {
+                match &*reg.name {
+                    "RXD_AMOUNT" | "TXD_AMOUNT" => {
+                        for field in reg.r_fields.iter_mut().chain(&mut reg.w_fields) {
+                            if field.name == "AMOUNT" {
+                                field.width = 8;
                             }
                         }
-
-                        "RXD_MAXCNT" | "TXD_MAXCNT" => {
-                            // DMA related
-                            reg.access.make_write_unsafe();
-
-                            for field in reg.r_fields.iter_mut().chain(&mut reg.w_fields) {
-                                if field.name == "MAXCNT" {
-                                    field.width = 8;
-                                }
-                            }
-                        }
-
-                        // DMA related
-                        "TASKS_STARTRX" | "TASKS_STARTTX" | "RXD_PTR" | "TXD_PTR" => {
-                            reg.access.make_write_unsafe();
-                        }
-
-                        _ => {}
                     }
+
+                    "RXD_MAXCNT" | "TXD_MAXCNT" => {
+                        // DMA related
+                        reg.access.make_write_unsafe();
+
+                        for field in reg.r_fields.iter_mut().chain(&mut reg.w_fields) {
+                            if field.name == "MAXCNT" {
+                                field.width = 8;
+                            }
+                        }
+                    }
+
+                    // DMA related
+                    "TASKS_STARTRX" | "TASKS_STARTTX" | "RXD_PTR" | "TXD_PTR" => {
+                        reg.access.make_write_unsafe();
+                    }
+
+                    _ => {}
                 }
             }
-
-            _ => {}
         }
     }
 }

@@ -29,7 +29,7 @@ pub fn declare(args: TokenStream, input: TokenStream) -> TokenStream {
 
     for (i, f) in input.fns.iter().enumerate() {
         let name = &f.name;
-        let is_init = name.to_string() == "init";
+        let is_init = *name == "init";
         let params = to_params(&f.locals, is_init);
         let stmts = &f.stmts;
         let output = &f.output;
@@ -80,7 +80,8 @@ pub fn declare(args: TokenStream, input: TokenStream) -> TokenStream {
                 #(#citems)*
             };
         }
-    ).into()
+    )
+    .into()
 }
 
 struct Input {
@@ -139,7 +140,7 @@ impl parse::Parse for Input {
                             ));
                         }
 
-                        let (locals, stmts) = split(f.block)?;
+                        let (locals, stmts) = split(*f.block)?;
 
                         fns.push(Fn {
                             locals,
@@ -174,7 +175,7 @@ impl parse::Parse for Input {
     }
 }
 
-fn split(block: Box<Block>) -> parse::Result<(Vec<Static>, Vec<Stmt>)> {
+fn split(block: Block) -> parse::Result<(Vec<Static>, Vec<Stmt>)> {
     let mut istmts = block.stmts.into_iter();
     let mut stmts = vec![];
     let mut statics = vec![];
@@ -213,9 +214,8 @@ fn verify(s: syn::ItemStatic) -> parse::Result<Static> {
         } else {
             return Err(parse::Error::new(
                 span,
-                format!(
-                    "`#[uninit]` attribute must contain the `unsafe` keyword: `#[uninit(unsafe)]`"
-                ),
+                "`#[uninit]` attribute must contain the `unsafe` keyword: `#[uninit(unsafe)]`"
+                    .to_owned(),
             ));
         }
     }

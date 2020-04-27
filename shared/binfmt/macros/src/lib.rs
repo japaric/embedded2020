@@ -50,22 +50,16 @@ pub fn debug(input: TokenStream) -> TokenStream {
                 let footprint = variants.join(",");
                 (quote!(CLikeEnum), footprint)
             } else {
-                return parse::Error::new(
-                    ident.span(),
-                    "this data type is not supported",
-                )
-                .to_compile_error()
-                .into();
+                return parse::Error::new(ident.span(), "this data type is not supported")
+                    .to_compile_error()
+                    .into();
             }
         }
 
         Data::Union(_) => {
-            return parse::Error::new(
-                ident.span(),
-                "this data type is not supported",
-            )
-            .to_compile_error()
-            .into();
+            return parse::Error::new(ident.span(), "this data type is not supported")
+                .to_compile_error()
+                .into();
         }
 
         Data::Struct(data) => {
@@ -80,8 +74,7 @@ pub fn debug(input: TokenStream) -> TokenStream {
                         let mut exprs = vec![];
                         let n = fields.named.len();
                         for (i, field) in fields.named.iter().enumerate() {
-                            let ident =
-                                field.ident.as_ref().expect("UNREACHABLE");
+                            let ident = field.ident.as_ref().expect("UNREACHABLE");
                             let name = ident.to_string();
 
                             fields_s.push(format!("{}: {{{}}}", name, i));
@@ -89,30 +82,21 @@ pub fn debug(input: TokenStream) -> TokenStream {
                         }
 
                         if n <= 8 {
-                            stmts.push(
-                                quote!(f.write(&u8::to_le_bytes(#(#exprs)|*))),
-                            );
+                            stmts.push(quote!(f.write(&u8::to_le_bytes(#(#exprs)|*))));
                         } else if n <= 16 {
-                            stmts.push(
-                                quote!(f.write(&u16::to_le_bytes(#(#exprs)|*))),
-                            );
+                            stmts.push(quote!(f.write(&u16::to_le_bytes(#(#exprs)|*))));
                         } else {
                             todo!()
                         }
 
                         (
                             quote!(Register),
-                            format!(
-                                "{} {{{{ {} }}}}",
-                                ident_s,
-                                fields_s.join(", ")
-                            ),
+                            format!("{} {{{{ {} }}}}", ident_s, fields_s.join(", ")),
                         )
                     } else {
                         let mut fields_s = vec![];
                         for field in &fields.named {
-                            let ident =
-                                field.ident.as_ref().expect("UNREACHABLE");
+                            let ident = field.ident.as_ref().expect("UNREACHABLE");
                             let name = ident.to_string();
                             let ty = &field.ty;
 
@@ -124,11 +108,7 @@ pub fn debug(input: TokenStream) -> TokenStream {
 
                         (
                             quote!(Footprint),
-                            format!(
-                                "{} {{{{ {} }}}}",
-                                ident_s,
-                                fields_s.join(", ")
-                            ),
+                            format!("{} {{{{ {} }}}}", ident_s, fields_s.join(", ")),
                         )
                     }
                 }
@@ -180,11 +160,7 @@ pub fn binwrite(input: TokenStream) -> TokenStream {
         .unwrap_or_else(|e| e.to_compile_error().into())
 }
 
-fn write_(
-    input: Input,
-    newline: bool,
-    tag: bool,
-) -> parse::Result<TokenStream> {
+fn write_(input: Input, newline: bool, tag: bool) -> parse::Result<TokenStream> {
     let start = Instant::now();
     let mut footprint = input.footprint.value();
 
@@ -273,12 +249,12 @@ fn count_args(footprint: &str, span: Span2) -> parse::Result<usize> {
             let next = chars.peek();
 
             if next == Some(&'}') {
-                drop(chars.next());
+                let _ = chars.next();
 
                 nargs += 1;
             } else if next == Some(&'{') {
                 // escaped brace
-                drop(chars.next());
+                let _ = chars.next();
             } else {
                 return Err(parse::Error::new(
                     span,
@@ -290,7 +266,7 @@ fn count_args(footprint: &str, span: Span2) -> parse::Result<usize> {
 
             if next == Some(&'}') {
                 // escaped brace
-                drop(chars.next());
+                let _ = chars.next();
             } else {
                 return Err(parse::Error::new(
                     span,

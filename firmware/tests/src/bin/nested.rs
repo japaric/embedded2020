@@ -43,5 +43,7 @@ fn NMI() {
 fn use_the_stack() {
     let mut x = 0;
     let y = &mut x as *mut i32;
-    unsafe { drop((&y as *const *mut i32).read_volatile()) }
+    unsafe {
+        (&y as *const *mut i32).read_volatile();
+    }
 }

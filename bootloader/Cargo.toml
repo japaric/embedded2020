@@ -6,11 +6,23 @@ name = "bootloader"
 publish = false
 version = "0.0.0"
 
+[profile.dev]
+codegen-units = 1
+debug = false
+debug-assertions = false
+incremental = false
+lto = "fat"
+opt-level = 'z'
+overflow-checks = false
+
 [profile.release]
 codegen-units = 1
-debug = true
-lto = true
+debug = false
+debug-assertions = false
+incremental = false
+lto = "fat"
 opt-level = 'z'
+overflow-checks = false
 
 [dependencies]
 cm = { path = "../shared/cm", features = ["SCB"] }

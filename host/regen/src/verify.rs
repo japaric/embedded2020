@@ -121,5 +121,5 @@ impl Bitfield<'_> {
 }
 
 fn is_invalid_ident(s: &str) -> bool {
-    s.contains("%")
+    s.contains('%')
 }

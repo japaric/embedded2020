@@ -159,11 +159,11 @@ fn dynfmt(footprint: &str, args: &[String]) -> String {
 
             if next == Some(&'}') {
                 // argument
-                chars.next();
+                let _ = chars.next();
                 s.push_str(args.next().expect("unreachable"));
             } else if next == Some(&'{') {
                 // escaped brace
-                chars.next();
+                let _ = chars.next();
                 s.push('{');
             } else {
                 unreachable!()
@@ -173,7 +173,7 @@ fn dynfmt(footprint: &str, args: &[String]) -> String {
 
             if next == Some(&'}') {
                 // escaped brace
-                chars.next();
+                let _ = chars.next();
                 s.push('}');
             } else {
                 unreachable!()
@@ -195,14 +195,14 @@ fn dynfmt_register(footprint: &str, val: u32) -> String {
 
             if next == Some('{') {
                 // escaped brace
-                chars.next();
+                let _ = chars.next();
                 s.push('{');
             } else {
                 let end = footprint[start..].find('}').unwrap() + start;
 
                 for _ in start..end {
                     // skip this argument in the next `while let` iteration
-                    drop(chars.next());
+                    let _ = chars.next();
                 }
 
                 // NOTE(+1) skips the left brace (`{`)
@@ -247,7 +247,7 @@ fn dynfmt_register(footprint: &str, val: u32) -> String {
 
             if next == Some('}') {
                 // escaped brace
-                chars.next();
+                let _ = chars.next();
                 s.push('}');
             } else {
                 unreachable!()
@@ -408,10 +408,10 @@ fn count_footprint_arguments(footprint: &str) -> usize {
             let next = chars.peek();
             if next == Some(&'}') {
                 n += 1;
-                chars.next();
+                let _ = chars.next();
             } else if next == Some(&'{') {
                 // escaped brace
-                chars.next();
+                let _ = chars.next();
             }
         }
     }
@@ -427,7 +427,7 @@ fn get_register_width(footprint: &str) -> usize {
             let next = chars.peek().map(|ci| ci.1);
             if next == Some('{') {
                 // escaped brace
-                chars.next();
+                let _ = chars.next();
             } else {
                 // bitfield
                 let end = footprint[start..].find('}').unwrap() + start;
@@ -437,7 +437,7 @@ fn get_register_width(footprint: &str) -> usize {
                 let highest_bit = if bitfield.contains(':') {
                     // range
                     let mut parts = bitfield.splitn(2, ':');
-                    drop(parts.next());
+                    let _ = parts.next();
                     parts.next().unwrap().parse::<usize>().unwrap()
                 } else {
                     // individual bit

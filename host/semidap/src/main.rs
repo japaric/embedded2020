@@ -725,7 +725,7 @@ fn handle_exception(
 
     prompt(dap)?;
 
-    return Ok(0);
+    Ok(0)
 }
 
 fn prompt(dap: &mut Dap) -> Result<(), anyhow::Error> {
@@ -769,7 +769,7 @@ commands:
                     .map(|n| if n < 0 { n..1 } else { 0..n }),
 
                 (Some(m), Some(n)) => {
-                    if m.starts_with("-") && !n.starts_with("-") {
+                    if m.starts_with('-') && !n.starts_with('-') {
                         m.parse::<i32>()
                             .ok()
                             .and_then(|m| n.parse::<i32>().ok().map(|n| m..n + 1))

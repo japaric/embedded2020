@@ -9,7 +9,7 @@ const EPIN1: u8 = 0x81;
 
 fn main() -> Result<(), anyhow::Error> {
     let args = env::args().skip(1).collect::<Vec<_>>(); // skip program name
-    ensure!(args.len() > 0, "expected at least one argument");
+    ensure!(!args.is_empty(), "expected at least one argument");
 
     let mut dev = rusb::open_device_with_vid_pid(consts::VID, consts::PID).ok_or_else(|| {
         format_err!(

@@ -33,6 +33,7 @@ impl ops::Sub for Instant {
 
         // `ticks` is always less than `1 << 24`
         let ticks = self.inner.wrapping_sub(rhs.inner);
+        #[allow(clippy::suspicious_arithmetic_impl)]
         let secs = ticks >> 15;
         // one tick is equal to `1e9 / 32768` nanos
         // the fraction can be reduced to `1953125 / 64`

@@ -40,7 +40,7 @@ pub fn run(input: TokenStream) -> TokenStream {
 
         polls.push(quote!(
             // XXX do we want to prevent futures being polled beyond completion?
-            drop(#ident.as_mut().poll(&mut cx));
+            let _ = #ident.as_mut().poll(&mut cx);
         ));
     }
 

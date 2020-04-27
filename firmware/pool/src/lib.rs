@@ -152,6 +152,10 @@ where
     P: Pool,
 {
     /// Consumes the `Box`, returning a raw pointer
+    ///
+    /// # Safety
+    ///
+    /// See `alloc::boxed::Box` safety requirements
     pub unsafe fn from_raw(raw: *mut Node<P::T>) -> Self {
         Box {
             node: NonNull::new_unchecked(raw),

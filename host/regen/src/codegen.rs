@@ -355,20 +355,20 @@ fn register(register: &Register<'_>) -> TokenStream2 {
                 pub #unsafety fn write(&self, f: impl FnOnce(&mut W) -> &mut W) {
                     let mut w = W::zero();
                     f(&mut w);
-                    #safe { Self::address().write_volatile(w.into()) }
+                    #safe { Self::address().write_volatile(w.into()); }
                 }
 
                 /// Writes zeros to the register
                 #[inline(always)]
                 pub #unsafety fn zero(&self) {
-                    #safe { Self::address().write_volatile(0) }
+                    #safe { Self::address().write_volatile(0); }
                 }
             ));
         } else {
             rmethods.push(quote!(
                 /// Writes `bits` to the register in a single, volatile instruction
                 pub #unsafety fn write(&self, bits: #rty) {
-                    #safe { Self::address().write_volatile(bits) }
+                    #safe { Self::address().write_volatile(bits); }
                 }
             ));
         }
@@ -432,7 +432,7 @@ fn register(register: &Register<'_>) -> TokenStream2 {
                         let r = self.read();
                         let mut w = r.into();
                         f(r, &mut w);
-                        #safe { Self::address().write_volatile(w.into()) }
+                        #safe { Self::address().write_volatile(w.into()); }
                     }
                 ));
             }

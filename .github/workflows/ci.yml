@@ -18,6 +18,11 @@ jobs:
           target: thumbv7em-none-eabi
           toolchain: beta # TODO stable when 1.44 is out
 
+      - name: Fetch SVD
+        working-directory: ./host/regen
+        run: |
+          curl -LO https://raw.githubusercontent.com/NordicSemiconductor/nrfx/master/mdk/nrf52840.svd
+
       - name: Generate PAC
         uses: marcopolo/cargo@master
         with:
@@ -82,6 +87,11 @@ jobs:
           command: fmt
           args: --all -- --check
           working-directory: ./shared
+
+      - name: Fetch SVD
+        working-directory: ./host/regen
+        run: |
+          curl -LO https://raw.githubusercontent.com/NordicSemiconductor/nrfx/master/mdk/nrf52840.svd
 
       - name: Generate PAC
         uses: marcopolo/cargo@master

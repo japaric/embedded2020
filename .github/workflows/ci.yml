@@ -1,0 +1,109 @@
+on: push
+
+name: Continuous Integration
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: beta # TODO stable when 1.44 is out
+          override: true
+
+      - name: Check bootloader
+        uses: marcopolo/cargo@master
+        with:
+          command: check
+          working-directory: ./bootloader
+
+      - name: Check host
+        uses: marcopolo/cargo@master
+        with:
+          command: check
+          working-directory: ./host
+
+      - name: Generate PAC
+        uses: marcopolo/cargo@master
+        with:
+          command: run
+          working-directory: ./host/regen
+
+      - name: Check firmware
+        uses: marcopolo/cargo@master
+        with:
+          command: check
+          working-directory: ./firmware
+
+  lints:
+    name: Lints
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: rustfmt, clippy
+
+      - name: Format bootloader
+        uses: marcopolo/cargo@master
+        with:
+          command: fmt
+          args: --all -- --check
+          working-directory: ./bootloader
+
+      - name: Format firmware
+        uses: marcopolo/cargo@master
+        with:
+          command: fmt
+          args: --all -- --check
+          working-directory: ./firmware
+
+      - name: Format host
+        uses: marcopolo/cargo@master
+        with:
+          command: fmt
+          args: --all -- --check
+          working-directory: ./host
+
+      - name: Format shared
+        uses: marcopolo/cargo@master
+        with:
+          command: fmt
+          args: --all -- --check
+          working-directory: ./shared
+
+      - name: Clippy bootloader
+        uses: marcopolo/cargo@master
+        with:
+          command: clippy
+          args: -- -D warnings
+          working-directory: ./bootloader
+
+      - name: Clippy host
+        uses: marcopolo/cargo@master
+        with:
+          command: clippy
+          args: -- -D warnings
+          working-directory: ./host
+
+      - name: Generate PAC
+        uses: marcopolo/cargo@master
+        with:
+          command: run
+          working-directory: ./host/regen
+
+      - name: Clippy firmware
+        uses: marcopolo/cargo@master
+        with:
+          command: clippy
+          args: -- -D warnings
+          working-directory: ./firmware

@@ -30,6 +30,11 @@ jobs:
           command: run
           working-directory: ./host/regen
 
+      - name: Install build dependencies (host)
+        run: |
+          sudo apt-get update
+          sudo apt-get install libusb-1.0-0-dev
+
       - name: Check host
         uses: marcopolo/cargo@master
         with:
@@ -100,6 +105,11 @@ jobs:
         with:
           command: run
           working-directory: ./host/regen
+
+      - name: Install build dependencies (host)
+        run: |
+          sudo apt-get update
+          sudo apt-get install libusb-1.0-0-dev
 
       - name: Clippy host
         uses: marcopolo/cargo@master

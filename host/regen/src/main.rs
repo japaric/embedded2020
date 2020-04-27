@@ -27,7 +27,7 @@ const AUDITED: &[&str] = &[
 ];
 
 fn gen_nrf52(lib: &Path) -> Result<(), anyhow::Error> {
-    let xml = fs::read_to_string("nrf52.svd")?;
+    let xml = fs::read_to_string("nrf52840.svd")?;
     let dev = svd_parser::parse(&xml)?;
     let mut dev = translate::svd::device(&dev, AUDITED);
     audit_nrf52(&mut dev);

@@ -92,6 +92,7 @@ jobs:
         working-directory: ./host/regen
         run: |
           curl -LO https://raw.githubusercontent.com/NordicSemiconductor/nrfx/master/mdk/nrf52840.svd
+          sed -i 's|read-writeonce|read-writeOnce|g' nrf52840.svd
 
       - name: Generate PAC
         uses: marcopolo/cargo@master

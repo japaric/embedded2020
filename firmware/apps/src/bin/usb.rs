@@ -4,8 +4,7 @@
 #![no_std]
 
 use hal::usbd;
-// use panic_never as _; // this program should contain zero core::panic* calls
-use panic_abort as _; // but doesn't due to limitations in async/await codegen
+use panic_abort as _;
 
 #[no_mangle]
 fn main() -> ! {

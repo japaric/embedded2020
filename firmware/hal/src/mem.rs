@@ -1,5 +1,3 @@
-use core::ops;
-
 use pool::pool;
 
 // for radio packets we'll use these blocks as:

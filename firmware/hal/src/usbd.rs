@@ -11,9 +11,9 @@ use core::{
 use binfmt::derive::binDebug;
 use pac::{
     usbd::{epdatastatus, epinen, epouten, eventcause},
-    CLOCK, POWER, USBD,
+    POWER, USBD,
 };
-use pool::{pool, Box};
+use pool::Box;
 use usbd::{
     bRequest, config,
     device::{self, bMaxPacketSize0, bcdUSB},
@@ -45,7 +45,7 @@ const FULL_CONFIG_SIZE: u8 = config::Desc::SIZE + iface::Desc::SIZE + 2 * ep::De
 
 const CONFIG_DESC: config::Desc = config::Desc {
     bConfigurationValue: 1,
-    bMaxPower: 50, // 100 mA
+    bMaxPower: 250, // 500 mA
     bNumInterfaces: 1,
     bmAttributes: config::bmAttributes {
         remote_wakeup: false,
@@ -759,6 +759,7 @@ impl ops::DerefMut for Packet {
     }
 }
 
+#[cfg(feature = "radio")]
 impl From<Packet> for crate::radio::Packet {
     fn from(packet: Packet) -> crate::radio::Packet {
         crate::radio::Packet::from_parts(packet.buffer, packet.len)
@@ -959,11 +960,6 @@ fn EPOUTEN() -> epouten::R {
 #[allow(non_snake_case)]
 fn EPOUT1_MAXCNT(cnt: u8) {
     USBD::borrow_unchecked(|usbd| usbd.EPOUT1_MAXCNT.write(|w| w.MAXCNT(cnt)))
-}
-
-#[allow(non_snake_case)]
-fn EPOUT1_PTR() -> u32 {
-    USBD::borrow_unchecked(|usbd| usbd.EPOUT1_PTR.read().bits())
 }
 
 #[allow(non_snake_case)]

@@ -1,8 +1,7 @@
 //! Hardware Abstraction Layer
 
-// #![deny(missing_docs)]
-#![allow(warnings)]
-// #![deny(warnings)]
+#![deny(missing_docs)]
+#![deny(warnings)]
 #![no_std]
 
 use core::{

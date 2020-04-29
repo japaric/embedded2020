@@ -1,7 +1,4 @@
-use core::{
-    sync::atomic::{AtomicBool, Ordering},
-    task::Poll,
-};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use pac::CLOCK;
 
@@ -31,7 +28,7 @@ mod task {
     fn CLOCK() -> Option<()> {
         semidap::trace!("CLOCK");
 
-        let event = Event::next()?;
+        let _ = Event::next()?;
 
         semidap::info!("HFXO is stable");
         STARTED.store(true, Ordering::Relaxed);
@@ -42,6 +39,7 @@ mod task {
 
 static STARTED: AtomicBool = AtomicBool::new(false);
 
+#[cfg(feature = "radio")]
 pub async fn has_stabilized() {
     crate::poll_fn(|| {
         if STARTED.load(Ordering::Relaxed) {

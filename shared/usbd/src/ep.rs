@@ -101,9 +101,20 @@ pub enum wMaxPacketSize {
     IsochronousInterrupt {
         /// Must be less than `1 << 11`
         size: u16,
-        /// Must be less than `4`
-        transactions_per_microframe: u8,
+        /// Transactions per microframe
+        transactions_per_microframe: Transactions,
     },
+}
+
+/// Transactions per microframe
+#[derive(Clone, Copy)]
+pub enum Transactions {
+    /// 1 transaction per microframe
+    _1 = 0b00,
+    /// 2 transactions per microframe
+    _2 = 0b01,
+    /// 3 transactions per microframe
+    _3 = 0b10,
 }
 
 impl wMaxPacketSize {
@@ -114,7 +125,7 @@ impl wMaxPacketSize {
             wMaxPacketSize::IsochronousInterrupt {
                 size,
                 transactions_per_microframe,
-            } => (*size & ((1 << 11) - 1)) | (u16::from(*transactions_per_microframe & 0b11) << 11),
+            } => (*size & ((1 << 11) - 1)) | ((*transactions_per_microframe as u16) << 11),
         }
     }
 }

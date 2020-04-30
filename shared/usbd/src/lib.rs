@@ -4,6 +4,8 @@
 //!
 //! - Universal Serial Bus Specification Revision 2.0
 
+#![deny(missing_docs)]
+#![deny(warnings)]
 #![no_std]
 
 use core::convert::TryFrom;
@@ -15,6 +17,7 @@ pub mod device;
 pub mod ep;
 pub mod iface;
 
+/// USB direction (from the point of view of the host)
 #[derive(binDebug, Clone, Copy, PartialEq)]
 pub enum Direction {
     /// Host-to-Device
@@ -24,29 +27,50 @@ pub enum Direction {
     IN = 1,
 }
 
+/// USB device state
 #[derive(Clone, Copy, PartialEq)]
 pub enum State {
+    /// Default state
     Default,
+    /// Addressed state
     Address,
-    Configured { configuration: u8 },
+    /// Configured state
+    Configured {
+        /// Configuration value
+        configuration: u8,
+    },
 }
 
+/// Standard Request Code
 // see table 9-4 Standard Request Codes
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum bRequest {
+    /// Get status
     GET_STATUS,
+    /// Clear feature
     CLEAR_FEATURE,
+    /// Set feature
     SET_FEATURE,
+    /// Set address
     SET_ADDRESS,
+    /// Get descriptor
     GET_DESCRIPTOR,
+    /// Set descriptor
     SET_DESCRIPTOR,
+    /// Get configuration
     GET_CONFIGURATION,
+    /// Set configuration
     SET_CONFIGURATION,
+    /// Get interface
     GET_INTERFACE,
+    /// Set interface
     SET_INTERFACE,
+    /// Synch frame
     SYNCH_FRAME,
+    /// Reserved request code
     Reserved,
+    /// Non-standard request code
     NonStandard(u8),
 }
 
@@ -71,16 +95,25 @@ impl From<u8> for bRequest {
     }
 }
 
+/// Descriptor type
 #[allow(non_camel_case_types)]
 #[derive(binDebug, Clone, Copy, PartialEq)]
 pub enum DescriptorType {
+    /// Device descriptor
     DEVICE = 1,
+    /// Configuration descriptor
     CONFIGURATION = 2,
+    /// String descriptor
     STRING = 3,
+    /// Interface descriptor
     INTERFACE = 4,
+    /// Endpoint descriptor
     ENDPOINT = 5,
+    /// Device qualifier descriptor
     DEVICE_QUALIFIER = 6,
+    /// Other speed configuration descriptor
     OTHER_SPEED_CONFIGURATION = 7,
+    /// Interface power descriptor
     INTERFACE_POWER = 8,
 }
 

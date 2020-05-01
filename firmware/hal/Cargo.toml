@@ -13,7 +13,7 @@ consts = { path = "../../shared/consts" }
 pool = { path = "../pool" }
 semidap = { path = "../semidap" }
 tasks = { path = "../tasks" }
-usbd = { path = "../../shared/usbd", optional = true }
+usb2 = { path = "../../shared/usb2", optional = true }
 
 [dependencies.cm]
 features = ["DCB", "DWT", "NVIC"]
@@ -25,4 +25,4 @@ path = "../pac"
 
 [features]
 radio = ["pac/RADIO"]
-usb = ["usbd", "pac/POWER", "pac/USBD"]
+usb = ["usb2", "pac/POWER", "pac/USBD"]

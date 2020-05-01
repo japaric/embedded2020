@@ -14,7 +14,7 @@ use pac::{
     POWER, USBD,
 };
 use pool::Box;
-use usbd::{
+use usb2::{
     bRequest, config,
     device::{self, bMaxPacketSize0, bcdUSB},
     ep, iface, DescriptorType, Direction,
@@ -232,7 +232,7 @@ mod task {
     }
 
     fn USBD() -> Option<()> {
-        static mut USB_STATE: usbd::State = usbd::State::Default;
+        static mut USB_STATE: usb2::State = usb2::State::Default;
         static mut EP0_STATE: Ep0State = Ep0State::Idle;
 
         semidap::trace!("USBD");
@@ -285,11 +285,11 @@ mod task {
                     semidap::info!("USB reset");
 
                     match USB_STATE {
-                        usbd::State::Default | usbd::State::Address => {
-                            *USB_STATE = usbd::State::Default;
+                        usb2::State::Default | usb2::State::Address => {
+                            *USB_STATE = usb2::State::Default;
                         }
 
-                        usbd::State::Configured { .. } => {
+                        usb2::State::Configured { .. } => {
                             // TODO need to cancel existing transfers?
                             // TODO disable end points
                             super::todo()
@@ -379,7 +379,7 @@ mod task {
     }
 }
 
-fn ep0setup(usb_state: &mut usbd::State, ep_state: &mut Ep0State) {
+fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) {
     let bmrequesttype = BMREQUESTTYPE();
     let brequest = BREQUEST();
 
@@ -450,7 +450,7 @@ fn ep0setup(usb_state: &mut usbd::State, ep_state: &mut Ep0State) {
 
         (0, bRequest::SET_ADDRESS) => {
             #[cfg(debug_assertions)]
-            if *usb_state != usbd::State::Default {
+            if *usb_state != usb2::State::Default {
                 unreachable()
             }
 
@@ -463,7 +463,7 @@ fn ep0setup(usb_state: &mut usbd::State, ep_state: &mut Ep0State) {
                 semidap::info!("EP0SETUP: SET_ADDRESS {}", addr);
 
                 // no need to issue a status stage; the peripheral takes care of that
-                *usb_state = usbd::State::Address;
+                *usb_state = usb2::State::Address;
             } else {
                 // invalid request
                 semidap::error!("EP0SETUP: invalid SET_ADDRESS request");
@@ -479,19 +479,19 @@ fn ep0setup(usb_state: &mut usbd::State, ep_state: &mut Ep0State) {
 
             if wvalueh == 0 && windex == 0 && wlength == 0 && configuration <= NCONFIGS {
                 #[cfg(debug_assertions)]
-                if *usb_state == usbd::State::Default {
+                if *usb_state == usb2::State::Default {
                     unreachable()
                 }
 
                 semidap::info!("EP0SETUP: SET_CONFIGURATION {}", configuration);
 
                 if configuration == 0 {
-                    *usb_state = usbd::State::Address;
+                    *usb_state = usb2::State::Address;
 
                     // need to cancel ongoing transfers
                     todo()
                 } else {
-                    *usb_state = usbd::State::Configured { configuration };
+                    *usb_state = usb2::State::Configured { configuration };
 
                     // enable bulk endpoints
                     USBD::borrow_unchecked(|usbd| {

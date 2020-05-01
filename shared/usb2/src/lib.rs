@@ -1,8 +1,10 @@
-//! USB device types
+//! USB 2.0 definitions
 //!
 //! # References
 //!
 //! - Universal Serial Bus Specification Revision 2.0
+//! - Universal Serial Bus Communications Class Subclass Specification for PSTN Devices Revision 1.2
+//! - Universal Serial Bus Class Definitions for Communications Devices Revision 1.2 (Errata 1)
 
 #![deny(missing_docs)]
 #![deny(warnings)]

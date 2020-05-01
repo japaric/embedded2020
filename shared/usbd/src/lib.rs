@@ -12,6 +12,7 @@ use core::convert::TryFrom;
 
 use binfmt::derive::binDebug;
 
+pub mod cdc;
 pub mod config;
 pub mod device;
 pub mod ep;

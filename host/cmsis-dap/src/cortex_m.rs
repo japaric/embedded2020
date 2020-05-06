@@ -1,8 +1,8 @@
 //! Cortex-M specific operations
 
-use anyhow::anyhow;
+use anyhow::bail;
 use cm::{
-    dcb::{dcrsr, dhcsr, DCRDR, DCRSR, DHCSR},
+    dcb::{dcrsr, demcr, dhcsr, DCRDR, DCRSR, DEMCR, DHCSR},
     scb::{aircr, AIRCR},
 };
 use log::info;
@@ -78,7 +78,7 @@ impl Register {
 const DBGKEY: u16 = 0xA05F;
 
 impl crate::Dap {
-    /// [Cortex-M] Halts a Cortex-M target
+    /// [ARM Cortex-M] Halts a Cortex-M target
     pub fn halt(&mut self) -> Result<(), anyhow::Error> {
         info!("halting the target ...");
 
@@ -93,10 +93,10 @@ impl crate::Dap {
             let dhcsr = dhcsr::R::from(self.memory_read_word(addr)?);
 
             if dhcsr.C_HALT() == 0 {
-                return Err(anyhow!(
+                bail!(
                     "failed to halt the target (DHCSR = {:#010x})",
                     u32::from(dhcsr)
-                ));
+                );
             }
         }
 
@@ -105,12 +105,40 @@ impl crate::Dap {
         Ok(())
     }
 
-    /// Checks if the target is currently halted
+    /// [ARM Cortex-M] Resumes ARM Cortex-M execution
+    pub fn resume(&mut self) -> Result<(), anyhow::Error> {
+        if !self.is_halted()? {
+            info!("target is not halted");
+            return Ok(());
+        }
+
+        info!("resuming target ...");
+
+        let addr = DHCSR::address() as usize as u32;
+        let mut w = dhcsr::W::from(dhcsr::R::from(self.memory_read_word(addr)?));
+        w.DBGKEY(DBGKEY).C_HALT(0).C_DEBUGEN(1);
+        self.memory_write_word(addr, w.into())?;
+
+        let dhcsr = dhcsr::R::from(self.memory_read_word(addr)?);
+
+        if dhcsr.C_HALT() != 0 {
+            bail!(
+                "failed to resume the target (DHCSR = {:#010x})",
+                u32::from(dhcsr)
+            );
+        }
+
+        info!("... target resumed");
+
+        Ok(())
+    }
+
+    /// [ARM Cortex-M] Checks if the target is currently halted
     pub fn is_halted(&mut self) -> Result<bool, anyhow::Error> {
-        Ok(if self.debugen != Some(false) {
-            false
+        Ok(if self.debugen == Some(true) {
+            dhcsr::R::from(self.memory_read_word(DHCSR::address() as usize as u32)?).S_HALT() != 0
         } else {
-            dhcsr::R::from(self.memory_read_word(DHCSR::address() as usize as u32)?).C_HALT() != 0
+            false
         })
     }
 
@@ -124,8 +152,11 @@ impl crate::Dap {
         w.REGWnR(READ).REGSEL(reg.regsel());
         self.memory_write_word(DCRSR::address() as usize as u32, w.into())?;
 
-        let dhcsr = dhcsr::R::from(self.memory_read_word(DHCSR::address() as usize as u32)?);
-        while dhcsr.S_REGRDY() == 0 {
+        loop {
+            let dhcsr = dhcsr::R::from(self.memory_read_word(DHCSR::address() as usize as u32)?);
+            if dhcsr.S_REGRDY() != 0 {
+                break;
+            }
             self.brief_sleep();
         }
 
@@ -137,7 +168,7 @@ impl crate::Dap {
     }
 
     /// [ARM Cortex-M] Requests a system reset
-    pub fn sysresetreq(&mut self) -> Result<(), anyhow::Error> {
+    pub fn sysresetreq(&mut self, halt: bool) -> Result<(), anyhow::Error> {
         /// Vector Key
         const VECTKEY: u16 = 0x05fa;
 
@@ -145,20 +176,21 @@ impl crate::Dap {
 
         self.set_debugen()?;
 
+        let addr = DEMCR::address() as usize as u32;
+        let mut w = demcr::W::from(demcr::R::from(self.memory_read_word(addr)?));
+        w.VC_CORERESET(if halt { 1 } else { 0 });
+        self.memory_write_word(addr, w.into())?;
+
         let addr = AIRCR::address() as usize as u32;
         let mut w = aircr::W::from(aircr::R::from(self.memory_read_word(addr)?));
-        // let ro_mask =
-        // (u32::from(u16::max_value()) << 16) | (1 << 15) | (0b111 << 8);
         w.VECTKEY(VECTKEY).SYSRESETREQ(1);
-        // let new_val = (val & !ro_mask) | AIRCR_VECTKEY | AIRCR_SYSRESETREQ;
         self.memory_write_word(addr, w.into())?;
 
         // reset causes AHB_AP information to be lost; invalidate the cached state
         self.ap_bank = None;
         self.banked_data_mode = false;
         self.tar = None;
-        // NOTE it is possible to preserve C_DEBUGEN by catching the reset vector (see DEMCR)
-        self.debugen = Some(false);
+        self.debugen = Some(true);
 
         // wait for system and debug power-up
         let mut stat = self.read_register(adiv5::Register::DP_STAT)?;
@@ -179,7 +211,7 @@ impl crate::Dap {
     /// [ARM Cortex-M] Enables halting debug (DHCSR.C_DEBUGEN <- 1)
     ///
     /// Modifying some Cortex-M registers requires halting debug to be enabled
-    fn set_debugen(&mut self) -> Result<(), anyhow::Error> {
+    pub fn set_debugen(&mut self) -> Result<(), anyhow::Error> {
         if self.debugen == Some(true) {
             return Ok(());
         }
@@ -194,15 +226,45 @@ impl crate::Dap {
             let dhcsr = dhcsr::R::from(self.memory_read_word(addr)?);
 
             if dhcsr.C_DEBUGEN() == 0 {
-                return Err(anyhow!(
+                bail!(
                     "failed to enable halting debug mode (DHCSR = {:#010x})",
                     u32::from(dhcsr)
-                ));
+                );
             }
         }
 
         self.debugen = Some(true);
 
         Ok(())
+    }
+
+    /// [ARM Cortex-M] Writes `val` to the specified target's core `reg`-ister
+    pub fn write_core_register(&mut self, reg: Register, val: u32) -> Result<(), anyhow::Error> {
+        const WRITE: u8 = 1;
+
+        if !self.is_halted()? {
+            bail!("core must be halted before writing to a core register")
+        }
+
+        info!("writing Cortex-M register {:?} ... ", reg);
+
+        let word = self.memory_write_word(DCRDR::address() as u32, val)?;
+
+        let mut w = dcrsr::W::zero();
+        w.REGWnR(WRITE).REGSEL(reg.regsel());
+        self.memory_write_word(DCRSR::address() as u32, w.into())?;
+
+        let addr = DHCSR::address() as u32;
+        loop {
+            let dhcsr = dhcsr::R::from(self.memory_read_word(addr)?);
+            if dhcsr.S_REGRDY() != 0 {
+                break;
+            }
+            self.brief_sleep();
+        }
+
+        info!("{:?} <- {:#010x}", reg, val);
+
+        Ok(word)
     }
 }

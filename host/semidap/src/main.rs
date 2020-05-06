@@ -19,6 +19,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail};
+use arrayref::array_ref;
 use cm::scb::{cpuid, CPUID};
 use cmsis_dap::{cortex_m, Dap};
 use gimli::{
@@ -63,6 +64,12 @@ fn main() -> Result<(), anyhow::Error> {
     process::exit(not_main()?)
 }
 
+struct Vectors {
+    vtor: u32,
+    sp: u32,
+    pc: u32,
+}
+
 fn not_main() -> Result<i32, anyhow::Error> {
     let beginning = Instant::now();
     env_logger::init();
@@ -74,6 +81,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
     let elf = &ElfFile::new(&bytes).map_err(anyhow::Error::msg)?;
 
     debug!("extracting allocatable sections from the ELF file");
+    let mut vectors = None;
     let mut footprints = BTreeMap::new();
     let mut sections = vec![];
     let mut ncursors = 0;
@@ -134,9 +142,21 @@ fn not_main() -> Result<i32, anyhow::Error> {
                 ));
             }
 
+            let bytes = sect.raw_data(elf);
+            if name == ".vectors" {
+                let sp = u32::from_le_bytes(*array_ref!(bytes, 0, 4));
+                let pc = u32::from_le_bytes(*array_ref!(bytes, 4, 4));
+
+                vectors = Some(Vectors {
+                    vtor: address as u32,
+                    pc,
+                    sp,
+                })
+            }
+
             sections.push(Section {
                 address: address as u32,
-                bytes: sect.raw_data(elf),
+                bytes,
                 name,
             })
         } else if sect.get_name(elf) == Ok(".symtab") {
@@ -194,6 +214,8 @@ fn not_main() -> Result<i32, anyhow::Error> {
         }
     }
 
+    let vectors = vectors.ok_or_else(|| anyhow!("`.vectors` section not found"))?;
+
     range_names.sort_unstable_by(|a, b| a.0.start.cmp(&b.0.start));
 
     let mut dap = Dap::open(
@@ -213,7 +235,8 @@ fn not_main() -> Result<i32, anyhow::Error> {
     let cpuid = dap.memory_read_word(CPUID::address() as usize as u32)?;
     info!("target: {} (CPUID = {:#010x})", Part::from(cpuid), cpuid);
 
-    dap.halt()?;
+    debug!("resetting and halting the target");
+    dap.sysresetreq(true)?;
 
     debug!("loading ELF into the target's memory");
     let mut total_bytes = 0;
@@ -252,10 +275,14 @@ fn not_main() -> Result<i32, anyhow::Error> {
     let speed = total_bytes * NANOS / (dur.as_secs() * NANOS + u64::from(dur.subsec_nanos()));
     info!("loaded {} bytes in {:?} ({} B/s)", total_bytes, dur, speed);
 
+    dap.write_core_register(cortex_m::Register::LR, LR_END)?;
+    dap.write_core_register(cortex_m::Register::SP, vectors.sp)?;
+    dap.write_core_register(cortex_m::Register::PC, vectors.pc)?;
+    dap.memory_write_word(cm::scb::VTOR::address() as u32, vectors.vtor)?;
+
     info!("booting program (start to end: {:?})", end - beginning);
 
-    debug!("resetting the target");
-    dap.sysresetreq()?;
+    dap.resume()?;
 
     static CONTINUE: AtomicBool = AtomicBool::new(true);
     let mut twice = false;
@@ -415,6 +442,9 @@ fn handle_syscall(
     }
 }
 
+// the reset value of the Link Register; this indicates the end of the stack
+const LR_END: u32 = 0xFFFF_FFFF;
+
 fn backtrace(
     dap: &mut Dap,
     debug_frame: &DebugFrame<EndianSlice<LittleEndian>>,
@@ -528,8 +558,6 @@ fn backtrace(
     let ctx = &mut UninitializedUnwindContext::new();
 
     println!("stack backtrace:");
-    // the reset value of the Link Register; this indicates the end of the stack
-    const LR_RESET: u32 = 0xffff_ffff;
     let mut frame = 0;
     let mut registers = Registers::new(lr, sp);
     loop {
@@ -561,7 +589,7 @@ fn backtrace(
         }
 
         let lr = registers.get(Register::LR, dap)?;
-        if lr == LR_RESET {
+        if lr == LR_END {
             break;
         }
 

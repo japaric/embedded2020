@@ -8,6 +8,7 @@ version = "0.0.0"
 
 [dependencies]
 anyhow = "1.0.26"
+arrayref = "0.3.6"
 binfmt-parser = { path = "../binfmt-parser" }
 cm = { path = "../../shared/cm" }
 cmsis-dap = { path = "../cmsis-dap" }

@@ -41,6 +41,8 @@ static STARTED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(feature = "radio")]
 pub async fn has_stabilized() {
+    use core::task::Poll;
+
     crate::poll_fn(|| {
         if STARTED.load(Ordering::Relaxed) {
             Poll::Ready(())
@@ -51,6 +53,7 @@ pub async fn has_stabilized() {
     .await
 }
 
+#[cfg(feature = "usb")]
 pub fn is_stable() -> bool {
     STARTED.load(Ordering::Relaxed)
 }

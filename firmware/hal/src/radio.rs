@@ -4,13 +4,13 @@
 use core::convert::TryFrom;
 use core::{
     cmp, mem, ops, ptr, slice,
-    sync::atomic::{self, AtomicBool, AtomicU8, Ordering},
+    sync::atomic::{self, AtomicBool, Ordering},
     task::Poll,
 };
 
 use binfmt::derive::binDebug;
 use pac::RADIO;
-use pool::{pool, Box};
+use pool::Box;
 
 use crate::{atomic::Atomic, clock, mem::P, Interrupt0, NotSendOrSync};
 
@@ -23,9 +23,7 @@ mod task {
 
     use crate::{mem::P, Interrupt0};
 
-    use super::{Event, Lock, Packet, RxState, State, LOCK, RX_STATE, TX_DONE};
-    // SoftState,
-    // SOFT_STATE,
+    use super::{Event, Lock, Packet, RxState, LOCK, RX_STATE, TX_DONE};
 
     // NOTE(unsafe) all interrupts are still globally masked (`CPSID I`)
     fn init() {
@@ -238,14 +236,16 @@ impl Event {
                 return Some(Event::END);
             }
 
-            #[cfg(debug_assertions)]
-            unreachable();
-
-            None
+            if cfg!(debug_assertions) {
+                unreachable()
+            } else {
+                None
+            }
         })
     }
 }
 
+/// Claims the radio interface
 pub fn claim() -> (Tx, Rx) {
     static TAKEN: AtomicBool = AtomicBool::new(false);
 
@@ -262,7 +262,7 @@ pub fn claim() -> (Tx, Rx) {
             },
         )
     } else {
-        semidap::panic!("`ieee802154` interface has already been claimed")
+        semidap::panic!("`radio` interface has already been claimed")
     }
 }
 
@@ -305,6 +305,7 @@ pub struct Rx {
 }
 
 impl Rx {
+    /// Reads one radio packet
     pub async fn read(&mut self) -> Packet {
         clock::has_stabilized().await;
 
@@ -357,9 +358,11 @@ impl Rx {
                     }
 
                     Lock::Rx => {
-                        #[cfg(debug_assertions)]
-                        unreachable();
-                        Poll::Pending
+                        if cfg!(debug_assertions) {
+                            unreachable()
+                        } else {
+                            Poll::Pending
+                        }
                     }
                 }
             })
@@ -386,9 +389,11 @@ impl Rx {
                     }
 
                     RxState::Idle => {
-                        #[cfg(debug_assertions)]
-                        unreachable();
-                        Poll::Pending
+                        if cfg!(debug_assertions) {
+                            unreachable()
+                        } else {
+                            Poll::Pending
+                        }
                     }
                 }
             })
@@ -407,6 +412,7 @@ pub struct Tx {
 }
 
 impl Tx {
+    /// Sends the specified radio packet
     pub async fn write(&mut self, packet: Packet) {
         clock::has_stabilized().await;
 
@@ -459,6 +465,16 @@ impl Tx {
                         let state = STATE();
 
                         match state {
+                            State::Disabled => {
+                                TASKS_RXEN();
+
+                                semidap::info!("TX: enabling RADIO");
+
+                                Poll::Pending
+                            }
+
+                            State::RxRu => Poll::Pending,
+
                             State::RxIdle => {
                                 TASKS_CCASTART();
 
@@ -504,7 +520,7 @@ impl Packet {
 
     /// Returns an empty IEEE 802.15.4 packet
     pub async fn new() -> Self {
-        let mut buffer = P::alloc().await;
+        let buffer = P::alloc().await;
         let mut packet = Packet { buffer };
         unsafe { packet.len_ptr_mut().write(0) }
         packet
@@ -586,6 +602,7 @@ impl crate::usbd::Packet {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, binDebug)]
 #[repr(u8)]
 enum State {
@@ -602,46 +619,57 @@ enum State {
 
 // NOTE(borrow_unchecked) all these are either single instruction reads w/o side effects or single
 // instruction writes to registers won't be RMW-ed
+#[allow(non_snake_case)]
 fn TASKS_CCASTART() {
     RADIO::borrow_unchecked(|radio| radio.TASKS_CCASTART.write(|w| w.TASKS_CCASTART(1)))
 }
 
+#[allow(non_snake_case)]
 fn TASKS_RXEN() {
     RADIO::borrow_unchecked(|radio| radio.TASKS_RXEN.write(|w| w.TASKS_RXEN(1)))
 }
 
+#[allow(non_snake_case)]
 fn TASKS_START() {
     RADIO::borrow_unchecked(|radio| radio.TASKS_START.write(|w| w.TASKS_START(1)))
 }
 
+#[allow(non_snake_case)]
 fn TASKS_STOP() {
     RADIO::borrow_unchecked(|radio| radio.TASKS_STOP.write(|w| w.TASKS_STOP(1)))
 }
 
+#[allow(non_snake_case)]
 fn GET_PACKETPTR() -> u32 {
     RADIO::borrow_unchecked(|radio| radio.PACKETPTR.read().bits())
 }
 
+#[allow(non_snake_case)]
 fn SET_PACKETPTR(ptr: u32) {
     RADIO::borrow_unchecked(|radio| radio.PACKETPTR.write(|w| w.PACKETPTR(ptr)));
 }
 
+#[allow(non_snake_case)]
 unsafe fn INTENSET_FRAMESTART() {
     RADIO::borrow_unchecked(|radio| radio.INTENSET.write(|w| w.FRAMESTART(1)));
 }
 
+#[allow(non_snake_case)]
 fn INTENCLR_FRAMESTART() {
     RADIO::borrow_unchecked(|radio| radio.INTENCLR.write(|w| w.FRAMESTART(1)));
 }
 
+#[allow(non_snake_case)]
 unsafe fn INTENSET_PHYEND() {
     RADIO::borrow_unchecked(|radio| radio.INTENSET.write(|w| w.PHYEND(1)));
 }
 
+#[allow(non_snake_case)]
 fn INTENCLR_PHYEND() {
     RADIO::borrow_unchecked(|radio| radio.INTENCLR.write(|w| w.PHYEND(1)));
 }
 
+#[allow(non_snake_case)]
 fn STATE() -> State {
     RADIO::borrow_unchecked(|radio| {
         let bits = radio.STATE.read().bits();

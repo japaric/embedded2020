@@ -226,7 +226,7 @@ pub enum Interrupt1 {
 }
 
 // split this interrupt -- it makes my life much easier
-#[cfg(any(feature = "ieee802154", feature = "usb"))]
+#[cfg(any(feature = "radio", feature = "usb"))]
 #[no_mangle]
 unsafe extern "C" fn POWER_CLOCK() {
     extern "C" {

@@ -4,5 +4,5 @@ members = [
   "binfmt",
   "cm",
   "consts",
-  "usbd",
+  "usb2",
 ]

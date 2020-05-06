@@ -29,10 +29,10 @@ unsafe extern "C" fn Reset() {
     // configure I/O pins
     P0::borrow_unchecked(|p0| {
         // set outputs high
-        p0.OUTSET.write(|w| w.PIN13(1).PIN14(1).PIN15(1));
+        p0.OUTSET.write(|w| w.PIN22(1).PIN23(1).PIN24(1));
 
         // set pins as output
-        p0.DIRSET.write(|w| w.PIN13(1).PIN14(1).PIN15(1));
+        p0.DIRSET.write(|w| w.PIN22(1).PIN23(1).PIN24(1));
     });
 
     // wait for the LFXO to become stable

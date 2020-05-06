@@ -59,12 +59,14 @@ $ export RUST_LOG=semidap=info
 
 $ # or using the rb alias: `cargo rb led`
 $ cargo r --bin hello
-    Finished dev [optimized + debuginfo] target(s) in 0.01s
-     Running `semidap -v 0d28 -p 0204 target/thumbv7em-none-eabihf/debug/led`
-[2020-02-22T16:00:00Z INFO  semidap] target: ARM Cortex-M4 (CPUID = 0x410fc241)
-[2020-02-22T16:00:00Z INFO  semidap] loaded `.text` (124 B) in 7.828748ms
-[2020-02-22T16:00:00Z INFO  semidap] loaded `.bss` (4 B) in 2.14817ms
-[2020-02-22T16:00:00Z INFO  semidap] loaded `.vectors` (256 B) in 10.989605ms
-[2020-02-22T16:00:00Z INFO  semidap] loaded 384 bytes in 21.012181ms (18275 B/s)
-[2020-02-22T16:00:00Z INFO  semidap] booting program (start to end: 42.355395ms)
+    Finished dev [optimized + debuginfo] target(s) in 0.02s
+     Running `semidap -v 0d28 -p 0204 target/thumbv7em-none-eabi/debug/hello`
+[2020-05-06T21:58:52Z INFO  semidap] DAP S/N: 1026000013ac88bc00000000000000000000000097969902
+[2020-05-06T21:58:52Z INFO  semidap] target: ARM Cortex-M4 (CPUID = 0x410fc241)
+[2020-05-06T21:58:52Z INFO  semidap] loaded `.text` (552 B) in 21.86605ms
+[2020-05-06T21:58:52Z INFO  semidap] loaded `.bss` (4 B) in 3.949307ms
+[2020-05-06T21:58:52Z INFO  semidap] loaded `.vectors` (256 B) in 12.030267ms
+[2020-05-06T21:58:52Z INFO  semidap] loaded 812 bytes in 38.008952ms (21363 B/s)
+[2020-05-06T21:58:52Z INFO  semidap] booting program (start to end: 77.919153ms)
+0>  0.000_001s INFO  Hello, world!
 ```

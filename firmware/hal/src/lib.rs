@@ -15,6 +15,7 @@ use core::{
 use cm::{DWT, NVIC};
 use pac::FICR;
 
+#[cfg(any(feature = "radio", feature = "usb"))]
 #[macro_use]
 mod atomic;
 

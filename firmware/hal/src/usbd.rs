@@ -14,109 +14,13 @@ use pac::{
     POWER, USBD,
 };
 use pool::Box;
-use usb2::{
-    bRequest, config,
-    device::{self, bMaxPacketSize0, bcdUSB},
-    ep, iface, DescriptorType, Direction,
-};
+use usb2::{bRequest, DescriptorType};
 
 use crate::{atomic::Atomic, mem::P, Interrupt1, NotSendOrSync};
 
 const NCONFIGS: u8 = 1;
 
-const DEVICE_DESC: device::Desc = device::Desc {
-    // Interface Association Descriptor
-    bDeviceClass: 239,
-    bDeviceSubClass: 2,
-    bDeviceProtocol: 1,
-
-    bMaxPacketSize0: bMaxPacketSize0::B64,
-    bNumConfigurations: 1,
-    bcdDevice: 0x00_00,
-    bcdUSB: bcdUSB::V20,
-    iManufacturer: 0,
-    iProduct: 0,
-    iSerialNumber: 0,
-    idProduct: consts::PID,
-    idVendor: consts::VID,
-};
-
-const FULL_CONFIG_SIZE: u8 = config::Desc::SIZE + iface::Desc::SIZE + 2 * ep::Desc::SIZE;
-
-const CONFIG_DESC: config::Desc = config::Desc {
-    bConfigurationValue: 1,
-    bMaxPower: 250, // 500 mA
-    bNumInterfaces: 1,
-    bmAttributes: config::bmAttributes {
-        remote_wakeup: false,
-        self_powered: true,
-    },
-    iConfiguration: 0,
-    wTotalLength: FULL_CONFIG_SIZE as u16,
-};
-
-const IFACE_DESC: iface::Desc = iface::Desc {
-    bAlternativeSetting: 0,
-    bInterfaceClass: 10,
-    bInterfaceNumber: 0,
-    bInterfaceProtocol: 0,
-    bInterfaceSubClass: 0,
-    bNumEndpoints: 2,
-    iInterface: 0,
-};
-
-const EPIN1_DESC: ep::Desc = ep::Desc {
-    bEndpointAddress: ep::Address {
-        direction: Direction::IN,
-        number: 1,
-    },
-    bInterval: 0,
-    bmAttributes: ep::bmAttributes::Bulk,
-    wMaxPacketSize: ep::wMaxPacketSize::BulkControl {
-        size: Packet::CAPACITY as u16,
-    },
-};
-
-const EPOUT1_DESC: ep::Desc = ep::Desc {
-    bEndpointAddress: ep::Address {
-        direction: Direction::OUT,
-        number: 1,
-    },
-    bInterval: 0,
-    bmAttributes: ep::bmAttributes::Bulk,
-    wMaxPacketSize: ep::wMaxPacketSize::BulkControl {
-        size: Packet::CAPACITY as u16,
-    },
-};
-
-// String descriptors
-#[allow(dead_code)]
-static STRINGS: &[&str] = &[];
-#[allow(dead_code)]
-const LANG_ID: u16 = 1033; // en-us
-
-/// Puts together a configuration descriptor and its interface and endpoint
-/// descriptors in a single packet
-fn full_config() -> [u8; FULL_CONFIG_SIZE as usize] {
-    let mut out = [0; FULL_CONFIG_SIZE as usize];
-
-    let mut pos = 0;
-    let mut push = |bytes: &[u8]| {
-        let len = bytes.len();
-        // NOTE(unsafe) avoid (unreachable) panicking branches: the buffer is big enough
-        unsafe {
-            out.get_unchecked_mut(pos..pos + len).copy_from_slice(bytes);
-        }
-        pos += len;
-    };
-
-    push(&CONFIG_DESC.bytes());
-    push(&IFACE_DESC.bytes());
-    push(&EPIN1_DESC.bytes());
-    push(&EPOUT1_DESC.bytes());
-
-    out
-}
+include!(concat!(env!("OUT_DIR"), "/descs.rs"));
 
 static EPIN1_BUSY: AtomicBool = AtomicBool::new(false);
 static EPOUT1_STATE: Atomic<EpOut1State> = Atomic::new();
@@ -163,8 +67,8 @@ mod task {
         });
         pac::USBD::borrow_unchecked(|usbd| unsafe {
             usbd.INTENSET.write(|w| {
-                w.ENDEPIN0(1)
-                    .ENDEPIN1(1)
+                w.ENDEPIN1(1)
+                    .EP0DATADONE(1)
                     .EP0SETUP(1)
                     .EPDATA(1)
                     .USBEVENT(1)
@@ -306,15 +210,24 @@ mod task {
                     super::ep0setup(USB_STATE, EP0_STATE);
                 }
 
-                UsbdEvent::ENDEPIN0 => {
-                    #[cfg(debug_assertions)]
-                    if *EP0_STATE != Ep0State::Write {
-                        super::unreachable()
-                    }
+                UsbdEvent::EP0DATADONE => {
+                    semidap::info!("EPIN0: data transmitted");
 
-                    // return the buffer to the memory pool
-                    unsafe { drop(Box::<P>::from_raw(super::EPIN0_PTR() as *mut _)) }
-                    *EP0_STATE = Ep0State::Idle;
+                    match EP0_STATE {
+                        Ep0State::Write { leftover } => {
+                            if *leftover != 0 {
+                                super::continue_epin0(leftover);
+                            } else {
+                                *EP0_STATE = Ep0State::Idle;
+                            }
+                        }
+
+                        Ep0State::Idle =>
+                        {
+                            #[cfg(debug_assertions)]
+                            super::unreachable()
+                        }
+                    }
                 }
 
                 UsbdEvent::ENDEPIN1 => {
@@ -403,34 +316,24 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) {
 
                 match desc_type {
                     DescriptorType::DEVICE if desc_index == 0 && language_id == 0 => {
-                        if let Some(buf) = P::try_alloc() {
-                            let bytes = DEVICE_DESC.bytes();
-
-                            epin0(&bytes, buf);
-                            *ep_state = Ep0State::Write;
-                        } else {
-                            semidap::warn!("EP0: not enough memory to handle this request");
-                            EP0STALL();
-                        }
+                        start_epin0(
+                            DEVICE_DESC.get(..wlength.into()).unwrap_or(&DEVICE_DESC),
+                            ep_state,
+                        );
                     }
 
                     DescriptorType::CONFIGURATION if language_id == 0 => {
-                        if let Some(buf) = P::try_alloc() {
-                            let full_config_desc;
-                            let config_desc;
-                            let bytes = if wlength == u16::from(config::Desc::SIZE) {
-                                config_desc = CONFIG_DESC.bytes();
-                                &config_desc[..]
-                            } else {
-                                full_config_desc = full_config();
-                                &full_config_desc[..]
-                            };
-
-                            epin0(&bytes, buf);
-                            *ep_state = Ep0State::Write;
+                        if desc_index == 0 {
+                            start_epin0(
+                                CONFIG_DESC.get(..wlength.into()).unwrap_or(&CONFIG_DESC),
+                                ep_state,
+                            );
                         } else {
-                            semidap::warn!("EP0: not enough memory to handle this request");
-                            EP0STALL();
+                            // only a single configuration is supported
+                            semidap::error!(
+                                "host requested a non-existent configuration descriptor"
+                            );
+                            EP0STALL()
                         }
                     }
 
@@ -495,7 +398,7 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) {
 
                     // enable bulk endpoints
                     USBD::borrow_unchecked(|usbd| {
-                        usbd.EPINEN.write(|w| w.IN0(1).IN1(1));
+                        usbd.EPINEN.write(|w| w.IN0(1).IN1(1).IN2(1));
                         usbd.EPOUTEN.write(|w| w.OUT0(1).OUT1(1));
                         usbd.SIZE_EPOUT1.write(|w| w.SIZE(0));
 
@@ -515,29 +418,55 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) {
     }
 }
 
-fn epin0(bytes: &[u8], mut buf: Box<P>) {
-    let len = bytes.len();
+fn start_epin0(bytes: &'static [u8], ep_state: &mut Ep0State) {
+    #[cfg(debug_assertions)]
+    semidap::assert!(
+        *ep_state == Ep0State::Idle,
+        "tried to start a control read transfer before the previous one finished"
+    );
 
-    if len <= DEVICE_DESC.bMaxPacketSize0 as usize {
+    let len = bytes.len() as u16;
+
+    let maxcnt = if len <= MAX_PACKET_SIZE0.into() {
         // done in a single transfer
-        short_ep0done_ep0setup();
+        short_ep0datadone_ep0status();
+        *ep_state = Ep0State::Write { leftover: 0 };
+        len as u8
     } else {
-        todo()
-    }
+        unshort_ep0datadone_ep0status();
+        let maxcnt = MAX_PACKET_SIZE0;
+        *ep_state = Ep0State::Write {
+            leftover: len - u16::from(maxcnt),
+        };
+        maxcnt
+    };
 
-    let len = len as u8;
-
-    semidap::info!("EPIN0: sending {}B of data", len);
-
-    unsafe {
-        ptr::copy_nonoverlapping(bytes.as_ptr(), buf.as_mut_ptr(), len.into());
-    }
+    semidap::info!("EPIN0: sending {}B of data", maxcnt);
 
     USBD::borrow_unchecked(|usbd| {
-        usbd.EPIN0_MAXCNT.write(|w| w.MAXCNT(len));
-        // NOTE(fence) the next write transfer ownership of the buffer to the DMA
-        atomic::compiler_fence(Ordering::Release);
-        usbd.EPIN0_PTR.write(|w| w.PTR(buf.into_raw() as u32));
+        usbd.EPIN0_MAXCNT.write(|w| w.MAXCNT(maxcnt));
+        usbd.EPIN0_PTR.write(|w| w.PTR(bytes.as_ptr() as u32));
+
+        usbd.TASKS_STARTEPIN0.write(|w| w.TASKS_STARTEPIN(1));
+    })
+}
+
+fn continue_epin0(leftover: &mut u16) {
+    USBD::borrow_unchecked(|usbd| {
+        usbd.EPIN0_PTR
+            .rmw(|r, w| w.PTR(r.PTR() + u32::from(MAX_PACKET_SIZE0)));
+
+        let max_packet_size0 = u16::from(MAX_PACKET_SIZE0);
+        if *leftover <= max_packet_size0 {
+            let maxcnt = *leftover as u8;
+            semidap::info!("EPIN0: sending last {}B of data", maxcnt);
+            short_ep0datadone_ep0status();
+            usbd.EPIN0_MAXCNT.write(|w| w.MAXCNT(maxcnt));
+            *leftover = 0;
+        } else {
+            semidap::info!("EPIN0: sending next {}B of data", MAX_PACKET_SIZE0);
+            *leftover -= max_packet_size0;
+        }
 
         usbd.TASKS_STARTEPIN0.write(|w| w.TASKS_STARTEPIN(1));
     })
@@ -769,7 +698,7 @@ impl From<Packet> for crate::radio::Packet {
 #[derive(Clone, Copy, PartialEq)]
 enum Ep0State {
     Idle,
-    Write,
+    Write { leftover: u16 },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -822,10 +751,10 @@ impl PowerEvent {
 
 #[derive(Clone, Copy, binDebug, PartialEq)]
 enum UsbdEvent {
-    ENDEPIN0,
     ENDEPIN1,
     ENDEPOUT1,
     EP0SETUP,
+    EP0DATADONE,
     EPDATA,
     USBEVENT,
     USBRESET,
@@ -844,9 +773,9 @@ impl UsbdEvent {
                 return Some(UsbdEvent::USBRESET);
             }
 
-            if usbd.EVENTS_ENDEPIN0.read().bits() != 0 {
-                usbd.EVENTS_ENDEPIN0.zero();
-                return Some(UsbdEvent::ENDEPIN0);
+            if usbd.EVENTS_EP0DATADONE.read().bits() != 0 {
+                usbd.EVENTS_EP0DATADONE.zero();
+                return Some(UsbdEvent::EP0DATADONE);
             }
 
             if usbd.EVENTS_EP0SETUP.read().bits() != 0 {
@@ -888,9 +817,15 @@ fn todo() -> ! {
     semidap::panic!("unimplemented")
 }
 
-fn short_ep0done_ep0setup() {
+fn short_ep0datadone_ep0status() {
     USBD::borrow_unchecked(|usbd| {
         usbd.SHORTS.rmw(|_, w| w.EP0DATADONE_EP0STATUS(1));
+    });
+}
+
+fn unshort_ep0datadone_ep0status() {
+    USBD::borrow_unchecked(|usbd| {
+        usbd.SHORTS.rmw(|_, w| w.EP0DATADONE_EP0STATUS(0));
     });
 }
 
@@ -930,11 +865,6 @@ fn connect() {
 fn disconnect() {
     USBD::borrow_unchecked(|usbd| usbd.USBPULLUP.zero());
     semidap::info!("detached from the bus");
-}
-
-#[allow(non_snake_case)]
-fn EPIN0_PTR() -> u32 {
-    USBD::borrow_unchecked(|usbd| usbd.EPIN0_PTR.read().bits())
 }
 
 #[allow(non_snake_case)]

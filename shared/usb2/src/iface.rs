@@ -15,13 +15,47 @@ pub struct Desc {
     /// Number of endpoints
     pub bNumEndpoints: u8,
     /// Interface class
-    pub bInterfaceClass: u8,
-    /// Interface subclass
-    pub bInterfaceSubClass: u8,
+    pub bInterfaceClass: Class,
     /// Interface protocol
     pub bInterfaceProtocol: u8,
     /// Interface string descriptor index
     pub iInterface: u8,
+}
+
+/// Interface class
+#[derive(Clone, Copy)]
+pub enum Class {
+    /// Communications class
+    Communications {
+        /// Subclass
+        subclass: CommunicationsSubclass,
+    },
+
+    /// Communication Data class
+    CdcData,
+}
+
+/// Sub-classes of the Communications class
+#[derive(Clone, Copy)]
+pub enum CommunicationsSubclass {
+    /// Abstract Control Mode
+    Acm = 0x2,
+}
+
+impl Class {
+    fn byte(&self) -> u8 {
+        match self {
+            Class::Communications { .. } => 0x2,
+            Class::CdcData => 0xA,
+        }
+    }
+
+    fn subclass_byte(&self) -> u8 {
+        match self {
+            Class::Communications { subclass } => *subclass as u8,
+            Class::CdcData => 0,
+        }
+    }
 }
 
 impl Desc {
@@ -36,8 +70,8 @@ impl Desc {
             self.bInterfaceNumber,
             self.bAlternativeSetting,
             self.bNumEndpoints,
-            self.bInterfaceClass,
-            self.bInterfaceSubClass,
+            self.bInterfaceClass.byte(),
+            self.bInterfaceClass.subclass_byte(),
             self.bInterfaceProtocol,
             self.iInterface,
         ]

@@ -45,13 +45,9 @@ setup.
 - `cd ../host && cargo install --path semidap`, tool to run embedded
   applications as if they were native applications
 
-- Flash the bootloader. See instructions in the [`bootloader`][/bootloader]
-directory.
-
 ### Per debug session setup
 
-- Connect the Particle debugger to the Xenon using the ribbon cable. Then plug
-  the Particle debugger into one of the host's USB ports.
+- Connect the nRF52840 MDK to your PC using a USB-C cable.
 
 ### Per example steps
 
@@ -61,8 +57,8 @@ Just run
 $ # optional
 $ export RUST_LOG=semidap=info
 
-$ # or using the rrb alias: `cargo rrb led`
-$ cargo r --bin led --release
+$ # or using the rb alias: `cargo rb led`
+$ cargo r --bin hello
     Finished dev [optimized + debuginfo] target(s) in 0.01s
      Running `semidap -v 0d28 -p 0204 target/thumbv7em-none-eabihf/debug/led`
 [2020-02-22T16:00:00Z INFO  semidap] target: ARM Cortex-M4 (CPUID = 0x410fc241)

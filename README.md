@@ -4,12 +4,6 @@
 
 ## Please read this
 
-**NOTE** I'm using the Particle Xenon for my experiments but I have *no*
-interest in the Particle ecosystem (\*). I just happened to pick this nRF52
-board for my experiments because I like the "Feather" form factor.
-
-(\*) Also, Particle will discontinue support for this board in 2020.
-
 The goal of this personal experiment is exploring ways in which developing
 embedded Rust software (HALs, device-agnostic libraries, applications, etc.) can
 be improved. You'll see me here re-implementing things that have already been

@@ -94,10 +94,11 @@ impl crate::Dap {
             self.memory_write_word(addr, w.into())?;
 
             let mut dhcsr = 0;
-            if !util::check(RETRIES, || {
+            let c_halt = || {
                 dhcsr = self.memory_read_word(addr)?;
                 Ok(dhcsr::R::from(dhcsr).C_HALT() != 0)
-            })? {
+            };
+            if !util::check(RETRIES, c_halt)? {
                 bail!("failed to halt the target (DHCSR = {:#010x})", dhcsr);
             }
         }
@@ -145,12 +146,13 @@ impl crate::Dap {
         w.REGWnR(READ).REGSEL(reg.regsel());
         self.memory_write_word(DCRSR::address() as usize as u32, w.into())?;
 
-        if !util::check(RETRIES, || {
+        let s_regrdy = || {
             Ok(
                 dhcsr::R::from(self.memory_read_word(DHCSR::address() as usize as u32)?).S_REGRDY()
                     != 0,
             )
-        })? {
+        };
+        if !util::check(RETRIES, s_regrdy)? {
             bail!("failed to read register {:?}", reg);
         }
 
@@ -219,13 +221,14 @@ impl crate::Dap {
             self.memory_write_word(addr, w.into())?;
 
             let mut dhcsr = 0;
-            if !util::check(RETRIES, || {
+            let c_debugen = || {
                 dhcsr = self.memory_read_word(addr)?;
                 Ok(dhcsr::R::from(dhcsr).C_DEBUGEN() != 0)
-            })? {
+            };
+            if !util::check(RETRIES, c_debugen)? {
                 bail!(
                     "failed to enable halting debug mode (DHCSR = {:#010x})",
-                    u32::from(dhcsr)
+                    dhcsr
                 )
             }
         }
@@ -245,21 +248,20 @@ impl crate::Dap {
 
         info!("writing Cortex-M register {:?} ... ", reg);
 
-        let word = self.memory_write_word(DCRDR::address() as u32, val)?;
+        self.memory_write_word(DCRDR::address() as u32, val)?;
 
         let mut w = dcrsr::W::zero();
         w.REGWnR(WRITE).REGSEL(reg.regsel());
         self.memory_write_word(DCRSR::address() as u32, w.into())?;
 
         let addr = DHCSR::address() as u32;
-        if !util::check(RETRIES, || {
-            Ok(dhcsr::R::from(self.memory_read_word(addr)?).S_REGRDY() != 0)
-        })? {
+        let s_regrdy = || Ok(dhcsr::R::from(self.memory_read_word(addr)?).S_REGRDY() != 0);
+        if !util::check(RETRIES, s_regrdy)? {
             bail!("failed to write register {:?}", reg);
         }
 
         info!("{:?} <- {:#010x}", reg, val);
 
-        Ok(word)
+        Ok(())
     }
 }

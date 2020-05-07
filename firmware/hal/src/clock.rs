@@ -1,4 +1,4 @@
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::AtomicBool;
 
 use pac::CLOCK;
 
@@ -20,18 +20,18 @@ mod task {
             unsafe { clock.INTENSET.write(|w| w.HFCLKSTARTED(1)) }
         });
 
-        unsafe {
-            crate::unmask0(&[Interrupt0::POWER_CLOCK]);
-        }
+        unsafe { crate::unmask0(&[Interrupt0::POWER_CLOCK]) }
     }
 
     fn CLOCK() -> Option<()> {
         semidap::trace!("CLOCK");
 
-        let _ = Event::next()?;
-
-        semidap::info!("HFXO is stable");
-        STARTED.store(true, Ordering::Relaxed);
+        match Event::next()? {
+            Event::HFCLKSTARTED => {
+                semidap::info!("HFXO is stable");
+                STARTED.store(true, Ordering::Relaxed);
+            }
+        }
 
         None
     }
@@ -41,7 +41,7 @@ static STARTED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(feature = "radio")]
 pub async fn has_stabilized() {
-    use core::task::Poll;
+    use core::{sync::atomic::Ordering, task::Poll};
 
     crate::poll_fn(|| {
         if STARTED.load(Ordering::Relaxed) {
@@ -55,6 +55,8 @@ pub async fn has_stabilized() {
 
 #[cfg(feature = "usb")]
 pub fn is_stable() -> bool {
+    use core::sync::atomic::Ordering;
+
     STARTED.load(Ordering::Relaxed)
 }
 

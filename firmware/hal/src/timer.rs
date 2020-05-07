@@ -11,7 +11,53 @@ use core::{
 
 use pac::RTC0;
 
-use crate::{led, time, NotSync};
+use crate::{time, NotSync};
+
+#[tasks::declare]
+mod task {
+    use pac::RTC0;
+
+    use crate::{led, Interrupt0};
+
+    fn init() {
+        RTC0::borrow_unchecked(|rtc| unsafe {
+            rtc.INTENSET
+                .write(|w| w.COMPARE0(1).COMPARE1(1).COMPARE2(1).COMPARE3(1).OVRFLW(1));
+        });
+
+        unsafe { crate::unmask0(&[Interrupt0::RTC0]) }
+    }
+
+    fn RTC0() {
+        semidap::trace!("RTC0");
+
+        RTC0::borrow_unchecked(|rtc| {
+            if rtc.EVENTS_OVRFLW.read().EVENTS_OVRFLW() != 0 {
+                semidap::error!("RTC count overflowed ... aborting");
+                led::Blue.off();
+                led::Green.off();
+                led::Red.on();
+                semidap::abort();
+            }
+
+            if rtc.EVENTS_COMPARE0.read().EVENTS_COMPARE() != 0 {
+                rtc.EVENTS_COMPARE0.zero();
+            }
+
+            if rtc.EVENTS_COMPARE1.read().EVENTS_COMPARE() != 0 {
+                rtc.EVENTS_COMPARE1.zero();
+            }
+
+            if rtc.EVENTS_COMPARE2.read().EVENTS_COMPARE() != 0 {
+                rtc.EVENTS_COMPARE2.zero();
+            }
+
+            if rtc.EVENTS_COMPARE3.read().EVENTS_COMPARE() != 0 {
+                rtc.EVENTS_COMPARE3.zero();
+            }
+        });
+    }
+}
 
 /// [Singleton] timer
 pub struct Timer {
@@ -104,35 +150,4 @@ impl Future for Wait<'_> {
             }
         }
     }
-}
-
-#[allow(non_snake_case)]
-#[no_mangle]
-fn RTC0() {
-    semidap::trace!("RTC0");
-
-    RTC0::borrow_unchecked(|rtc| {
-        if rtc.EVENTS_OVRFLW.read().EVENTS_OVRFLW() != 0 {
-            led::Blue.off();
-            led::Green.off();
-            led::Red.on();
-            semidap::abort();
-        }
-
-        if rtc.EVENTS_COMPARE0.read().EVENTS_COMPARE() != 0 {
-            rtc.EVENTS_COMPARE0.zero();
-        }
-
-        if rtc.EVENTS_COMPARE1.read().EVENTS_COMPARE() != 0 {
-            rtc.EVENTS_COMPARE1.zero();
-        }
-
-        if rtc.EVENTS_COMPARE2.read().EVENTS_COMPARE() != 0 {
-            rtc.EVENTS_COMPARE2.zero();
-        }
-
-        if rtc.EVENTS_COMPARE3.read().EVENTS_COMPARE() != 0 {
-            rtc.EVENTS_COMPARE3.zero();
-        }
-    });
 }

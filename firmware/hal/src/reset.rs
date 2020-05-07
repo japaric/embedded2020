@@ -3,22 +3,33 @@ use core::mem;
 use cm::{DCB, DWT, NVIC};
 use pac::{CLOCK, P0, RTC0};
 
-use crate::Interrupt0;
-
 #[no_mangle]
 unsafe extern "C" fn Reset() {
     // NOTE(borrow_unchecked) interrupts disabled; this runs before user code
     asm::disable_irq();
 
-    // use the external 32.768 KHz crystal to drive the low frequency clock
+    // enable the cycle counter and start it with an initial count of 0
+    DCB::borrow_unchecked(|dcb| dcb.DEMCR.rmw(|_, w| w.TRCENA(1)));
+    DWT::borrow_unchecked(|dwt| {
+        dwt.CYCCNT.write(0);
+        dwt.CTRL.rmw(|_, w| w.CYCCNTENA(1));
+    });
+
+    // start the RTC with a counter of 0
+    RTC0::borrow_unchecked(|rtc| {
+        rtc.TASKS_CLEAR.write(|w| w.TASKS_CLEAR(1));
+        rtc.TASKS_START.write(|w| w.TASKS_START(1));
+    });
+
     CLOCK::borrow_unchecked(|clock| {
-        // use the external crystal (LFXO) as the low-frequency clock source
+        // use the external crystal (LFXO) as the low-frequency clock (LFCLK) source
         clock.LFCLKSRC.write(|w| w.SRC(1));
-        // start the low-frequency clock
+
+        // start the LFXO
         clock.TASKS_LFCLKSTART.write(|w| w.TASKS_LFCLKSTART(1));
     });
 
-    // seal some peripherals so they cannot be used from userspace
+    // seal some peripherals so they cannot be used from the application
     CLOCK::seal();
     DCB::seal();
     DWT::seal();
@@ -28,37 +39,12 @@ unsafe extern "C" fn Reset() {
 
     // configure I/O pins
     P0::borrow_unchecked(|p0| {
-        // set outputs high
+        // set outputs high (LEDs off)
         p0.OUTSET.write(|w| w.PIN22(1).PIN23(1).PIN24(1));
 
         // set pins as output
         p0.DIRSET.write(|w| w.PIN22(1).PIN23(1).PIN24(1));
     });
-
-    // wait for the LFXO to become stable
-    CLOCK::borrow_unchecked(|clock| {
-        while clock.EVENTS_LFCLKSTARTED.read().EVENTS_LFCLKSTARTED() == 0 {
-            continue;
-        }
-    });
-
-    // start the RTC with a counter of 0
-    RTC0::borrow_unchecked(|rtc| {
-        rtc.INTENSET
-            .write(|w| w.COMPARE0(1).COMPARE1(1).COMPARE2(1).COMPARE3(1).OVRFLW(1));
-        rtc.TASKS_CLEAR.write(|w| w.TASKS_CLEAR(1));
-        rtc.TASKS_START.write(|w| w.TASKS_START(1));
-    });
-
-    // enable the cycle counter and start it with an initial count of 0
-    DCB::borrow_unchecked(|dcb| dcb.DEMCR.rmw(|_, w| w.TRCENA(1)));
-    DWT::borrow_unchecked(|dwt| {
-        dwt.CYCCNT.write(0);
-        dwt.CTRL.rmw(|_, w| w.CYCCNTENA(1));
-    });
-
-    // unmask interrupts
-    crate::unmask0(&[Interrupt0::RTC0]);
 
     // run initializers
     extern "C" {

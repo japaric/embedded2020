@@ -7,7 +7,7 @@ use cm::{
 };
 use log::info;
 
-use crate::adiv5;
+use crate::{adiv5, util};
 
 /// Cortex-M register that the DAP can read
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -77,6 +77,8 @@ impl Register {
 /// Debug Key
 const DBGKEY: u16 = 0xA05F;
 
+const RETRIES: usize = 2;
+
 impl crate::Dap {
     /// [ARM Cortex-M] Halts a Cortex-M target
     pub fn halt(&mut self) -> Result<(), anyhow::Error> {
@@ -90,13 +92,13 @@ impl crate::Dap {
             let mut w = dhcsr::W::from(dhcsr);
             w.DBGKEY(DBGKEY).C_HALT(1).C_DEBUGEN(1);
             self.memory_write_word(addr, w.into())?;
-            let dhcsr = dhcsr::R::from(self.memory_read_word(addr)?);
 
-            if dhcsr.C_HALT() == 0 {
-                bail!(
-                    "failed to halt the target (DHCSR = {:#010x})",
-                    u32::from(dhcsr)
-                );
+            let mut dhcsr = 0;
+            if !util::check(RETRIES, || {
+                dhcsr = self.memory_read_word(addr)?;
+                Ok(dhcsr::R::from(dhcsr).C_HALT() != 0)
+            })? {
+                bail!("failed to halt the target (DHCSR = {:#010x})", dhcsr);
             }
         }
 
@@ -118,15 +120,6 @@ impl crate::Dap {
         let mut w = dhcsr::W::from(dhcsr::R::from(self.memory_read_word(addr)?));
         w.DBGKEY(DBGKEY).C_HALT(0).C_DEBUGEN(1);
         self.memory_write_word(addr, w.into())?;
-
-        let dhcsr = dhcsr::R::from(self.memory_read_word(addr)?);
-
-        if dhcsr.C_HALT() != 0 {
-            bail!(
-                "failed to resume the target (DHCSR = {:#010x})",
-                u32::from(dhcsr)
-            );
-        }
 
         info!("... target resumed");
 
@@ -152,12 +145,13 @@ impl crate::Dap {
         w.REGWnR(READ).REGSEL(reg.regsel());
         self.memory_write_word(DCRSR::address() as usize as u32, w.into())?;
 
-        loop {
-            let dhcsr = dhcsr::R::from(self.memory_read_word(DHCSR::address() as usize as u32)?);
-            if dhcsr.S_REGRDY() != 0 {
-                break;
-            }
-            self.brief_sleep();
+        if !util::check(RETRIES, || {
+            Ok(
+                dhcsr::R::from(self.memory_read_word(DHCSR::address() as usize as u32)?).S_REGRDY()
+                    != 0,
+            )
+        })? {
+            bail!("failed to read register {:?}", reg);
         }
 
         let word = self.memory_read_word(DCRDR::address() as usize as u32)?;
@@ -223,13 +217,16 @@ impl crate::Dap {
             let mut w = dhcsr::W::from(dhcsr);
             w.DBGKEY(DBGKEY).C_DEBUGEN(1);
             self.memory_write_word(addr, w.into())?;
-            let dhcsr = dhcsr::R::from(self.memory_read_word(addr)?);
 
-            if dhcsr.C_DEBUGEN() == 0 {
+            let mut dhcsr = 0;
+            if !util::check(RETRIES, || {
+                dhcsr = self.memory_read_word(addr)?;
+                Ok(dhcsr::R::from(dhcsr).C_DEBUGEN() != 0)
+            })? {
                 bail!(
                     "failed to enable halting debug mode (DHCSR = {:#010x})",
                     u32::from(dhcsr)
-                );
+                )
             }
         }
 
@@ -255,12 +252,10 @@ impl crate::Dap {
         self.memory_write_word(DCRSR::address() as u32, w.into())?;
 
         let addr = DHCSR::address() as u32;
-        loop {
-            let dhcsr = dhcsr::R::from(self.memory_read_word(addr)?);
-            if dhcsr.S_REGRDY() != 0 {
-                break;
-            }
-            self.brief_sleep();
+        if !util::check(RETRIES, || {
+            Ok(dhcsr::R::from(self.memory_read_word(addr)?).S_REGRDY() != 0)
+        })? {
+            bail!("failed to write register {:?}", reg);
         }
 
         info!("{:?} <- {:#010x}", reg, val);

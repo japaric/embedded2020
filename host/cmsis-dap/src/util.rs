@@ -15,3 +15,16 @@ pub fn round_up(x: u16, n: u16) -> u16 {
         x
     }
 }
+
+pub fn check(
+    retries: usize,
+    mut cond: impl FnMut() -> Result<bool, anyhow::Error>,
+) -> Result<bool, anyhow::Error> {
+    for _ in 0..retries {
+        if cond()? {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}

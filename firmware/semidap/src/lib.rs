@@ -138,9 +138,10 @@ pub fn exit(code: i32) -> ! {
 #[doc(hidden)]
 #[derive(Clone, Copy)]
 pub struct Channel {
+    // the host never modifies these fields
     bufferp: *mut u8,
-    // the `read` pointer is kept in host memory
     write: &'static Cell<u16>,
+    // NOTE the `read` pointer is maintained in host memory
 }
 
 /// Implementation detail
@@ -158,13 +159,13 @@ pub fn stdout() -> Channel {
 
 // TODO(?) change this to the *usable* size of one HID packet
 const HID_PACKET_SIZE: u8 = 64;
-const CAPACITY: u16 = 16 * HID_PACKET_SIZE as u16;
+const CAPACITY: u16 = 8 * HID_PACKET_SIZE as u16;
 
 #[no_mangle]
 static mut SEMIDAP_CURSOR: [Cell<u16>; 2] = [Cell::new(0), Cell::new(0)];
 #[link_section = ".uninit.SEMIDAP_BUFFER"]
 #[no_mangle]
-static mut SEMIDAP_BUFFER: [UnsafeCell<MaybeUninit<[u8; 2 * CAPACITY as usize]>>; 2] = [
+static mut SEMIDAP_BUFFER: [UnsafeCell<MaybeUninit<[u8; CAPACITY as usize]>>; 2] = [
     UnsafeCell::new(MaybeUninit::uninit()),
     UnsafeCell::new(MaybeUninit::uninit()),
 ];
@@ -207,7 +208,7 @@ impl Channel {
             // When that's not the case the second `memcpy` could result in an
             // out of bounds write. It's very unlikely that `bytes.len()` will
             // ever be greater than `CAPACITY` because logs are compressed
-            let pivot = cursor.wrapping_add(len).wrapping_sub(CAPACITY);
+            let pivot = CAPACITY.wrapping_sub(cursor);
             unsafe {
                 memcpy(
                     bytes.as_ptr(),

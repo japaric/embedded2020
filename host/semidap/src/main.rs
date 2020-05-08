@@ -317,7 +317,10 @@ fn not_main() -> Result<i32, anyhow::Error> {
                 let bufferp = bufferp + cap * i as u32;
 
                 let available = write.wrapping_sub(read);
-                if available > cap {
+                if available == 0 {
+                    // nothing to do
+                    continue;
+                } else if available > cap {
                     return Err(anyhow!("fatal: semidap buffer has been overrun"));
                 }
                 let cursor = read % cap;
@@ -325,7 +328,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
                 if cursor + available > cap {
                     // the readable part wraps around the end of the buffer: do a
                     // split transfer
-                    let pivot = cursor + available - cap;
+                    let pivot = cap.wrapping_sub(cursor);
                     let first_half = dap.memory_read(bufferp + cursor, pivot)?;
                     let second_half = dap.memory_read(bufferp, available - pivot)?;
                     hbuffer.extend_from_slice(&first_half);

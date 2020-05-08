@@ -401,6 +401,8 @@ fn not_main() -> Result<i32, anyhow::Error> {
         }
     }
 
+    dap.halt()?;
+
     Ok(0)
 }
 

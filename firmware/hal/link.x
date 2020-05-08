@@ -13,32 +13,15 @@ PROVIDE(__ram_start__ = ORIGIN(RAM));
 
 SECTIONS
 {
-  .text __ram_start__ :
+  /* stack located here */
+
+  .uninit __ram_start__ (NOLOAD) :
   {
-    *(.text .text.*);
+    *(.uninit.*);
     . = ALIGN(4);
   } > RAM
 
-  .rodata ADDR(.text) + SIZEOF(.text) :
-  {
-    *(.rodata .rodata.*);
-    . = ALIGN(4);
-  } > RAM
-
-  .init ADDR(.rodata) + SIZEOF(.rodata) :
-  {
-    _sinit = .;
-    KEEP(*(.init.*));
-    _einit = .;
-  } > RAM
-
-  .data ADDR(.init) + SIZEOF(.init) :
-  {
-    *(.data .data.*);
-    . = ALIGN(4);
-  } > RAM
-
-  .bss ADDR(.data) + SIZEOF(.data) (NOLOAD) :
+  .bss ADDR(.uninit) + SIZEOF(.uninit) (NOLOAD) :
   {
     _sbss = .;
     *(.bss .bss.*);
@@ -46,16 +29,35 @@ SECTIONS
     _ebss = .;
   } > RAM
 
-  .uninit ADDR(.bss) + SIZEOF(.bss) (NOLOAD) :
+  .data ADDR(.bss) + SIZEOF(.bss) :
   {
-    *(.uninit.*);
+    *(.data .data.*);
+    . = ALIGN(4);
+  } > RAM
+
+  .init ADDR(.data) + SIZEOF(.data) :
+  {
+    _sinit = .;
+    KEEP(*(.init.*));
+    /* no ALIGN because this section's size is always multiple of 4 bytes */
+    _einit = .;
+  } > RAM
+
+  .rodata ADDR(.init) + SIZEOF(.init) :
+  {
+    *(.rodata .rodata.*);
+    . = ALIGN(4);
+  } > RAM
+
+  .text ADDR(.rodata) + SIZEOF(.rodata) :
+  {
+    *(.text .text.*);
+    /* `.vectors` alignment requirement given the size of the vector table */
     . = ALIGN(256);
   } > RAM
 
-  .vectors ADDR(.uninit) + SIZEOF(.uninit) :
+  .vectors ADDR(.text) + SIZEOF(.text) :
   {
-    /* alignment requirement given the size of the vector table */
-    . = ALIGN(256);
     KEEP(*(.vectors));
   } > RAM
 

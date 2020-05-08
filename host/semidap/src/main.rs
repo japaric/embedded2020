@@ -318,8 +318,8 @@ fn not_main() -> Result<i32, anyhow::Error> {
                     // no new data
                     continue;
                 } else if write.wrapping_sub(*readp) >= len {
-                    dap.halt()?;
-                    bail!("semidap buffer has been overrun");
+                    dap.sysresetreq(true)?;
+                    bail!("semidap buffer has been overrun -- reset-halting device");
                 }
 
                 observed_empty = false;

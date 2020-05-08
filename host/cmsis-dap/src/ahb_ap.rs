@@ -1,18 +1,20 @@
-use core::cmp;
+use core::{cell::Cell, cmp};
 use std::convert::TryInto as _;
 
+use anyhow::bail;
 use arrayref::array_ref;
-use log::info;
+use log::{debug, info};
 
 use crate::{
-    adiv5, dap,
+    adiv5::{self, ApBank},
+    dap::{self, Command},
     sealed::{self, Data as _},
     util,
 };
 
 // XXX do other Cortex-M variants have a different "must preserve" value
 // see section 8.2.2 of Cortex-M4 TRM (Debug ARM DDI 0439B)
-const CSW_MUST_PRESERVE: u32 = (1 << 29) // MasterType
+pub(crate) const CSW_MUST_PRESERVE: u32 = (1 << 29) // MasterType
     | (1 << 25) // HPROT1
     | (1 << 24) // Reserved
     | (1 << 6) // DbgStatus
@@ -136,6 +138,227 @@ impl crate::Dap {
         }
 
         Ok(memory)
+    }
+
+    /// Reads a half-word and bytes from a circular buffer in a single DAP transaction
+    ///
+    /// - `hwp` must be a device-side `*const u16` pointer
+    /// - `bufp` must be a device-side `*const u8` pointer that points at the beginning of a
+    ///   circular buffer
+    /// - `cursor` is a cursor (index) into the circular buffer; bytes will be read starting at this
+    /// poisition
+    /// - `len` is the length of the circular buffer
+    // FIXME this duplicates a bunch of code but meh
+    pub fn read_hw_and_circbuf(
+        &mut self,
+        hwp: u32,
+        bufp: u32,
+        cursor: u16,
+        len: u16,
+    ) -> Result<(u16, Vec<u8>), anyhow::Error> {
+        assert_eq!(hwp % 2, 0);
+
+        const CMD_EC: Command = Command::DAP_ExecuteCommands;
+        const RESP_EC: u16 = 2;
+        const CMD_T: Command = Command::DAP_Transfer;
+        const RESP_T: u16 = 3;
+        const CMD_TB: Command = Command::DAP_TransferBlock;
+        const RESP_TB: u16 = 4;
+        const WORD: u16 = 4;
+        // FIXME should not be hardcoded
+        const PACKET_SIZE: u16 = 63; // first byte is the HID report number
+        let mut ncmds: u8 = 2; // number of command requests
+
+        if !self.supports_atomic_commands()? {
+            bail!("`read_hw_and_circbuf` requires support for atomic commands");
+        }
+
+        self.banked_data_mode = false;
+        self.tar = None; // FIXME cache the right value
+        assert_eq!(self.cursor, 1);
+
+        // all operations will be performed in this bank
+        let ap_bank = 0;
+
+        let mut resp_len = 0;
+        let mut needs_bank_change = false;
+        if self.ap_bank.is_none() || self.ap_bank != Some(ApBank::AHB_AP(ap_bank)) {
+            self.ap_bank = Some(ApBank::AHB_AP(ap_bank));
+            needs_bank_change = true;
+        }
+        let num_cmd_idx = 2;
+        let transfer_count_idx = Cell::new(5);
+
+        self.hid_push(CMD_EC);
+        self.hid_push(ncmds); // may be increased (see `num_cmd_idx`)
+        resp_len += RESP_EC;
+
+        let requests = Cell::new(0);
+        let mut push_dap_transfer_request = |reg: adiv5::Register, req: dap::Request| {
+            debug!("[atomic] {:?} += {:?} @ {:?}", CMD_T, req, reg);
+
+            let count = requests.get() + 1;
+            if requests.get() == 0 {
+                // add header
+                self.hid_push(CMD_T);
+                self.hid_push(dap::TRANSFER_DAP_INDEX);
+                self.hid_push(count);
+            } else {
+                self.hid_rewrite(transfer_count_idx.get() /* ! */, count);
+            }
+            requests.set(count);
+
+            if let dap::Request::Write(val) = req {
+                self.hid_push(reg.request() | dap::TRANSFER_RNW_WRITE);
+                self.hid_push(val);
+            } else {
+                self.hid_push(reg.request() | dap::TRANSFER_RNW_READ);
+            }
+        };
+
+        // first command DAP_Transfer
+        // change TAR to `hwp`
+        requests.set(0);
+        if needs_bank_change {
+            push_dap_transfer_request(
+                adiv5::Register::DP_SELECT,
+                dap::Request::Write(
+                    adiv5::DP_SELECT_APSEL_AHB_AP
+                        | (u32::from(ap_bank) << adiv5::DP_SELECT_APBANKSEL_OFFSET),
+                ),
+            );
+        }
+        push_dap_transfer_request(
+            adiv5::Register::AHB_AP_CSW,
+            dap::Request::Write(CSW_MUST_PRESERVE | u32::CSW_SIZE),
+        );
+        let tar = adiv5::Register::AHB_AP_TAR;
+        push_dap_transfer_request(tar, dap::Request::Write(hwp));
+
+        // read `hwp`
+        let drw = adiv5::Register::AHB_AP_DRW;
+        push_dap_transfer_request(drw, dap::Request::Read);
+
+        push_dap_transfer_request(
+            adiv5::Register::AHB_AP_CSW,
+            dap::Request::Write(CSW_MUST_PRESERVE | CSW_ADDRINC_PACKED | u8::CSW_SIZE),
+        );
+
+        let start = bufp + u32::from(cursor);
+        push_dap_transfer_request(tar, dap::Request::Write(start));
+        resp_len += RESP_T + WORD;
+
+        const ACK_OK: u8 = 1;
+
+        // second command DAP_TransferBlock -- see `transfer_block_read`
+        self.hid_push(CMD_TB);
+        self.hid_push(dap::TRANSFER_DAP_INDEX);
+        // FIXME assumes 64B packets
+        let mut first_len = 48;
+        if cursor + first_len >= len {
+            // split transfer
+            first_len = len - cursor;
+        }
+
+        let count = util::round_up(first_len, 4) / 4;
+        self.hid_push(count);
+        self.hid_push(drw.request() | dap::TRANSFER_RNW_READ);
+
+        debug!("[atomic] {:?} R {:?} {}", CMD_TB, drw, count);
+
+        resp_len += RESP_TB + 4 * count;
+
+        let second_len = if resp_len + RESP_T + RESP_TB + WORD <= PACKET_SIZE {
+            let len = util::round_down(PACKET_SIZE - (resp_len + RESP_T + RESP_TB), 4);
+            // third command: DAP_Transfer
+            ncmds += 1;
+            self.hid_push(CMD_T);
+            self.hid_push(dap::TRANSFER_DAP_INDEX);
+            self.hid_push(1u8);
+            self.hid_push(tar.request() | dap::TRANSFER_RNW_WRITE);
+            self.hid_push(bufp);
+            resp_len += RESP_T;
+
+            debug!("[atomic] {:?} += Write({:#010x}) @ {:?}", CMD_T, bufp, tar);
+
+            // fourth command: DAP_TransferBlock
+            ncmds += 1;
+            let count = util::round_up(len, 4) / 4;
+            self.hid_push(CMD_TB);
+            self.hid_push(dap::TRANSFER_DAP_INDEX);
+            self.hid_push(count);
+            self.hid_push(drw.request() | dap::TRANSFER_RNW_READ);
+            resp_len += RESP_TB + 4 * count;
+
+            debug!("[atomic] {:?} R {:?} {}", CMD_TB, drw, count);
+
+            self.hid_rewrite(num_cmd_idx, ncmds);
+
+            Some(len)
+        } else {
+            None
+        };
+
+        self.hid_flush()?;
+
+        let resp = self.hid_read(resp_len)?;
+
+        if resp[0] == CMD_EC
+            && resp[1] == ncmds
+            && resp[2] == CMD_T
+            && resp[3] == requests.get()
+            && resp[4] == ACK_OK
+            && resp[9] == CMD_TB
+            && resp[10..12] == (util::round_up(first_len, 4) / 4).to_le_bytes()
+            && resp[12] == ACK_OK
+        {
+            let word = &resp[5..9];
+            let hw = if hwp % 4 == 0 {
+                u16::from_le_bytes([word[0], word[1]])
+            } else {
+                u16::from_le_bytes([word[2], word[3]])
+            };
+
+            let mut bytes = vec![];
+
+            for chunk in resp[13..13 + util::round_up(first_len, 4) as usize].chunks_exact(4) {
+                let offset = (start % 4) as usize;
+                bytes.extend_from_slice(&chunk[offset..]);
+                bytes.extend_from_slice(&chunk[..offset]);
+            }
+
+            bytes.truncate(first_len as usize);
+
+            if let Some(len) = second_len {
+                // should be multiple of 4 due to the previous `round_down`
+                assert_eq!(len % 4, 0);
+
+                let start = 13 + util::round_up(first_len, 4) as usize;
+
+                if resp[start] == CMD_T
+                    && resp[start + 1] == 1
+                    && resp[start + 2] == ACK_OK
+                    && resp[start + 3] == CMD_TB
+                    && resp[start + 4..start + 6] == (len / 4).to_le_bytes()
+                    && resp[start + 6] == ACK_OK
+                {
+                    // should be multiple of 4 due to the previous `round_down`
+                    assert_eq!(resp[start + 7..].len(), len as usize);
+
+                    for chunk in resp[start + 7..].chunks_exact(4) {
+                        let offset = (bufp % 4) as usize;
+                        bytes.extend_from_slice(&chunk[offset..]);
+                        bytes.extend_from_slice(&chunk[..offset]);
+                    }
+                } else {
+                    bail!("`{:?}` failed", CMD_EC)
+                }
+            }
+
+            Ok((hw, bytes))
+        } else {
+            bail!("`{:?}` failed", CMD_EC)
+        }
     }
 
     fn transfer_block_read_csw<T>(

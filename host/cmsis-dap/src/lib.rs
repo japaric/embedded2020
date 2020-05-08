@@ -13,7 +13,7 @@
 use core::time::Duration;
 use std::thread;
 
-use anyhow::anyhow;
+use anyhow::bail;
 use hidapi::{HidApi, HidDevice};
 use log::{debug, info};
 
@@ -33,6 +33,7 @@ pub struct Dap {
 
     // property of the target
     packet_size: u16,
+    caps_atomic: Option<bool>,
 
     // transfer buffer
     total_requests: u8,
@@ -67,6 +68,7 @@ impl crate::Dap {
             buffer: Box::new([crate::hid::REPORT_ID; 5]),
             device,
 
+            caps_atomic: None,
             ap_bank: None,
             banked_data_mode: false,
             cursor: 1,
@@ -97,8 +99,9 @@ impl crate::Dap {
         info!("confirming SWD support");
         let caps = self.capabilities()?;
         if caps & dap::CAPABILITIES_SWD == 0 {
-            return Err(anyhow!("DAP does not support SWD"));
+            bail!("DAP does not support SWD")
         }
+        self.caps_atomic = Some(caps & dap::CAPABILITIES_ATOMIC != 0);
 
         info!("initializing SWD interface");
         self.connect(dap::Mode::SWD)?;
@@ -120,10 +123,10 @@ impl crate::Dap {
         if (dpidr & ((1 << 12) - 1))
             != (adiv5::DP_DPIDR_RESERVED | adiv5::DP_DPIDR_MANUFACTURER_ARM)
         {
-            return Err(anyhow!(
+            bail!(
                 "target device doesn't appear to be an ARM device (DPIDR = {:#010x})",
                 dpidr
-            ));
+            );
         }
         let version = (dpidr >> 12) & ((1 << 3) - 1);
         info!(
@@ -133,15 +136,15 @@ impl crate::Dap {
             } else if version == 1 {
                 "DPv1"
             } else {
-                return Err(anyhow!("only DPv1 and DPv2 are supported"));
+                bail!("only DPv1 and DPv2 are supported");
             },
             dpidr
         );
 
-        // // "Tools can only initiate an AP transfer when CDBGPWRUPREQ and
-        // // CDBGPWRUPACK are asserted HIGH. If CDBGPWRUPREQ or CDBGPWRUPACK is
-        // // LOW, any AP transfer generates an immediate fault response.", section
-        // // 2.4.2 of ADIv5
+        // "Tools can only initiate an AP transfer when CDBGPWRUPREQ and
+        // CDBGPWRUPACK are asserted HIGH. If CDBGPWRUPREQ or CDBGPWRUPACK is
+        // LOW, any AP transfer generates an immediate fault response.", section
+        // 2.4.2 of ADIv5
         let stat = self.read_register(adiv5::Register::DP_STAT)?;
         let stat = if stat & adiv5::DP_STAT_CDBGPWRUPACK == 0 {
             debug!("debug power-up request");
@@ -154,7 +157,7 @@ impl crate::Dap {
             self.push_dap_transfer_request(adiv5::Register::DP_STAT, dap::Request::Read);
             let stat = self.execute_dap_transfer()?[0];
             if stat & adiv5::DP_STAT_CDBGPWRUPACK == 0 {
-                return Err(anyhow!("debug power-up request failed"));
+                bail!("debug power-up request failed");
             }
             stat
         } else {
@@ -172,11 +175,22 @@ impl crate::Dap {
             self.push_dap_transfer_request(adiv5::Register::DP_STAT, dap::Request::Read);
             let stat = self.execute_dap_transfer()?[0];
             if stat & adiv5::DP_STAT_CSYSPWRUPACK == 0 {
-                return Err(anyhow!("system power-up request failed"));
+                bail!("system power-up request failed");
             }
         }
 
         Ok(())
+    }
+
+    /// Returns `true` if the probe supports atomic commands
+    pub fn supports_atomic_commands(&mut self) -> Result<bool, anyhow::Error> {
+        if let Some(atomic) = self.caps_atomic {
+            Ok(atomic)
+        } else {
+            let caps_atomic = self.capabilities()? & dap::CAPABILITIES_ATOMIC != 0;
+            self.caps_atomic = Some(caps_atomic);
+            Ok(caps_atomic)
+        }
     }
 
     /// Sleep for a bit to let the target make progress

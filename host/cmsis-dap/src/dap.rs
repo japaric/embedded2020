@@ -14,7 +14,7 @@ const LEN_SHORT: u8 = 2;
 #[allow(non_camel_case_types)]
 #[repr(u8)]
 #[derive(Clone, Copy, Debug)]
-enum Command {
+pub(crate) enum Command {
     DAP_Info = 0x00,
     DAP_Connect = 0x02,
 
@@ -24,6 +24,8 @@ enum Command {
 
     DAP_SWJ_Clock = 0x11,
     DAP_SWJ_Sequence = 0x12,
+
+    DAP_ExecuteCommands = 0x7F,
 }
 
 impl crate::hid::AsLeBytes for Command {
@@ -44,6 +46,7 @@ impl PartialEq<Command> for u8 {
 
 const DAP_INFO_CAPABILITIES: u8 = 0xf0;
 pub(crate) const CAPABILITIES_SWD: u8 = 1;
+pub(crate) const CAPABILITIES_ATOMIC: u8 = 1 << 4;
 
 // const DAP_INFO_PACKET_COUNT: u8 = 0xfe;
 
@@ -211,10 +214,10 @@ impl crate::Dap {
 
 /* ## DAP_Transfer */
 
-const TRANSFER_RNW_WRITE: u8 = 0 << 1;
-const TRANSFER_RNW_READ: u8 = 1 << 1;
+pub(crate) const TRANSFER_RNW_WRITE: u8 = 0 << 1;
+pub(crate) const TRANSFER_RNW_READ: u8 = 1 << 1;
 const TRANSFER_ACK_OK: u8 = 1;
-const TRANSFER_DAP_INDEX: u8 = 0; // always 0 for SWD interfaces
+pub(crate) const TRANSFER_DAP_INDEX: u8 = 0; // always 0 for SWD interfaces
 
 /// Requested access
 #[derive(Clone, Copy)]
@@ -236,7 +239,7 @@ impl fmt::Debug for Request {
 }
 
 impl adiv5::Register {
-    fn request(self) -> u8 {
+    pub(crate) fn request(self) -> u8 {
         use adiv5::Register::*;
 
         const REQUEST_DP: u8 = 0;

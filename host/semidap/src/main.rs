@@ -287,6 +287,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
 
     static CONTINUE: AtomicBool = AtomicBool::new(true);
     let mut twice = false;
+    let mut observed_empty;
     let mut stdout_buffers = (0..ncursors).map(|_| vec![]).collect::<Vec<_>>();
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
@@ -299,57 +300,42 @@ fn not_main() -> Result<i32, anyhow::Error> {
         fn drain(
             cursorp: u32,
             bufferp: u32,
-            cap: u32,
+            total_len: u32,
             readps: &mut [u16],
             hbuffers: &mut [Vec<u8>],
             dap: &mut Dap,
-        ) -> Result<u32, anyhow::Error> {
-            // TODO use atomic commands to read the cursor in a single DAP (HID)
-            // transaction
-            let writes = dap.memory_read::<u16>(cursorp, readps.len() as u32)?;
-
-            let mut xfer = 0;
-            let cap = cap / readps.len() as u32;
+        ) -> Result</* observed_empty */ bool, anyhow::Error> {
+            let mut observed_empty = true;
+            let len = (total_len / readps.len() as u32) as u16;
             for i in 0..readps.len() {
-                let write = u32::from(writes[i]);
-                let read = u32::from(readps[i]);
-                let hbuffer = &mut hbuffers[i];
-                let bufferp = bufferp + cap * i as u32;
+                let writep = cursorp + (mem::size_of::<u16>() * i) as u32;
+                let bufp = bufferp + (len as usize * i) as u32;
+                let readp = &mut readps[i];
 
-                let available = write.wrapping_sub(read);
-                if available == 0 {
-                    // nothing to do
+                let (write, bytes) =
+                    dap.read_hw_and_circbuf(writep, bufp, *readp % len, len as u16)?;
+                if write == *readp {
+                    // no new data
                     continue;
-                } else if available > cap {
-                    return Err(anyhow!("fatal: semidap buffer has been overrun"));
-                }
-                let cursor = read % cap;
-
-                if cursor + available > cap {
-                    // the readable part wraps around the end of the buffer: do a
-                    // split transfer
-                    let pivot = cap.wrapping_sub(cursor);
-                    let first_half = dap.memory_read(bufferp + cursor, pivot)?;
-                    let second_half = dap.memory_read(bufferp, available - pivot)?;
-                    hbuffer.extend_from_slice(&first_half);
-                    hbuffer.extend_from_slice(&second_half);
-                } else {
-                    // single transfer
-                    let bytes = dap.memory_read(bufferp + cursor, available)?;
-                    hbuffer.extend_from_slice(&bytes);
+                } else if write.wrapping_sub(*readp) >= len {
+                    dap.halt()?;
+                    bail!("semidap buffer has been overrun");
                 }
 
-                readps[i] = (read.wrapping_add(available)) as u16;
-                xfer += available;
+                observed_empty = false;
+                let n = cmp::min(write.wrapping_sub(*readp), bytes.len() as u16);
+                hbuffers[i].extend_from_slice(&bytes[..n as usize]);
+                *readp = *readp + n;
             }
-            Ok(xfer)
+
+            Ok(observed_empty)
         }
 
-        if let (Some(cursor), Some((bufferp, cap))) = (semidap_cursor, semidap_buffer) {
-            drain(
+        if let (Some(cursor), Some((bufferp, total_len))) = (semidap_cursor, semidap_buffer) {
+            observed_empty = drain(
                 cursor,
                 bufferp,
-                cap,
+                total_len,
                 &mut reads,
                 &mut stdout_buffers,
                 &mut dap,
@@ -390,16 +376,20 @@ fn not_main() -> Result<i32, anyhow::Error> {
                 writeln!(stdout, "{}>{}", src, message)?;
                 last_ts = curr;
             }
+        } else {
+            observed_empty = true;
         }
 
         // only handle a syscall when the device is halted, but first try to
         // drain the buffer
         // TODO(?) merge this with reading the cursors using an atomic command
-        if dap.is_halted()? {
-            if twice {
-                return handle_syscall(&mut dap, &debug_frame, &range_names);
-            } else {
-                twice = true;
+        if observed_empty {
+            if dap.is_halted()? {
+                if twice {
+                    return handle_syscall(&mut dap, &debug_frame, &range_names);
+                } else {
+                    twice = true;
+                }
             }
         }
     }

@@ -157,15 +157,20 @@ pub fn stdout() -> Channel {
     }
 }
 
-// TODO(?) change this to the *usable* size of one HID packet
-const HID_PACKET_SIZE: u8 = 64;
-const CAPACITY: u16 = 8 * HID_PACKET_SIZE as u16;
+// NOTE per HID transaction the host will drain 37-48B from the circular buffer (assuming 64B HID
+// packets)
+// NOTE for performance `CAPACITY` should be a power of 2
+const CAPACITY: u16 = 512;
 
 #[no_mangle]
 static mut SEMIDAP_CURSOR: [Cell<u16>; 2] = [Cell::new(0), Cell::new(0)];
+// NOTE buffers must be aligned so that they never span over a 4KB address boundary
+// for example we don't want a buffer with this address range: `0x2000_0fe0..0x2000_1020`
+#[repr(align(512))]
+struct Align<T>(T);
 #[link_section = ".uninit.SEMIDAP_BUFFER"]
 #[no_mangle]
-static mut SEMIDAP_BUFFER: [UnsafeCell<MaybeUninit<[u8; CAPACITY as usize]>>; 2] = [
+static mut SEMIDAP_BUFFER: [UnsafeCell<MaybeUninit<Align<[u8; CAPACITY as usize]>>>; 2] = [
     UnsafeCell::new(MaybeUninit::uninit()),
     UnsafeCell::new(MaybeUninit::uninit()),
 ];

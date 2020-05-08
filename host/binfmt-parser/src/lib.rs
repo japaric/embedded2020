@@ -48,11 +48,8 @@ impl Message<'_> {
 
     pub fn delta(&mut self, last: u32) {
         if let Timestamp::Absolute(ts) = self.timestamp {
-            if ts > last {
-                let delta = ts - last;
-                if delta < 1_000_000 {
-                    self.timestamp = Timestamp::Delta(delta);
-                }
+            if ts > last && ts / 1_000 == last / 1_000 {
+                self.timestamp = Timestamp::Delta(ts - last);
             }
         }
     }

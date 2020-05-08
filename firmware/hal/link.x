@@ -38,13 +38,15 @@ SECTIONS
     . = ALIGN(4);
   } > RAM
 
-  .bss ADDR(.data) + SIZEOF(.data) :
+  .bss ADDR(.data) + SIZEOF(.data) (NOLOAD) :
   {
+    _sbss = .;
     *(.bss .bss.*);
     . = ALIGN(4);
+    _ebss = .;
   } > RAM
 
-  .uninit ADDR(.bss) + SIZEOF(.bss) :
+  .uninit ADDR(.bss) + SIZEOF(.bss) (NOLOAD) :
   {
     *(.uninit.*);
     . = ALIGN(256);

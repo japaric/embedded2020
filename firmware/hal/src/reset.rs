@@ -1,4 +1,4 @@
-use core::mem;
+use core::{mem, ptr};
 
 use cm::{DCB, DWT, NVIC};
 use pac::{CLOCK, P0, RTC0};
@@ -6,19 +6,11 @@ use pac::{CLOCK, P0, RTC0};
 #[no_mangle]
 unsafe extern "C" fn Reset() {
     // NOTE(borrow_unchecked) interrupts disabled; this runs before user code
-    asm::disable_irq();
-
     // enable the cycle counter and start it with an initial count of 0
     DCB::borrow_unchecked(|dcb| dcb.DEMCR.rmw(|_, w| w.TRCENA(1)));
     DWT::borrow_unchecked(|dwt| {
         dwt.CYCCNT.write(0);
         dwt.CTRL.rmw(|_, w| w.CYCCNTENA(1));
-    });
-
-    // start the RTC with a counter of 0
-    RTC0::borrow_unchecked(|rtc| {
-        rtc.TASKS_CLEAR.write(|w| w.TASKS_CLEAR(1));
-        rtc.TASKS_START.write(|w| w.TASKS_START(1));
     });
 
     CLOCK::borrow_unchecked(|clock| {
@@ -28,6 +20,29 @@ unsafe extern "C" fn Reset() {
         // start the LFXO
         clock.TASKS_LFCLKSTART.write(|w| w.TASKS_LFCLKSTART(1));
     });
+
+    // start the RTC with a counter of 0
+    RTC0::borrow_unchecked(|rtc| {
+        rtc.TASKS_CLEAR.write(|w| w.TASKS_CLEAR(1));
+        rtc.TASKS_START.write(|w| w.TASKS_START(1));
+    });
+
+    // zero .bss
+    extern "C" {
+        static mut _sbss: u32;
+        static mut _ebss: u32;
+    }
+
+    let sbss = &mut _sbss as *mut u32;
+    let ebss = &mut _ebss as *mut u32;
+    ptr::write_bytes(
+        sbss,
+        0,
+        (ebss as usize - sbss as usize) / mem::size_of::<u32>(),
+    );
+
+    // NOTE this is a memory barrier -- .bss will be zeroed before the code that comes after this
+    asm::disable_irq();
 
     // seal some peripherals so they cannot be used from the application
     CLOCK::seal();

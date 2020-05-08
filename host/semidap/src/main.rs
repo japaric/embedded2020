@@ -30,7 +30,7 @@ use log::{debug, error, info};
 use rustyline::Editor;
 use structopt::StructOpt;
 use xmas_elf::{
-    sections::{SectionData, SHF_ALLOC},
+    sections::{SectionData, ShType, SHF_ALLOC},
     symbol_table::Entry,
     ElfFile,
 };
@@ -116,12 +116,13 @@ fn not_main() -> Result<i32, anyhow::Error> {
 
         let size = sect.size();
         if is_allocatable && size != 0 {
-            let name = sect.get_name(elf).map_err(anyhow::Error::msg)?;
-
-            if name == ".uninit" {
-                // we never load this section
+            // NOLOAD section like `.uninit` or `.bss`
+            if sect.get_type() == Ok(ShType::NoBits) {
+                // we never load these sections
                 continue;
             }
+
+            let name = sect.get_name(elf).map_err(anyhow::Error::msg)?;
 
             let address = sect.address();
             let max = u64::from(u32::max_value());

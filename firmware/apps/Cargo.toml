@@ -19,6 +19,7 @@ name = "usb"
 required-features = ["usb"]
 
 [dependencies]
+asm = { path = "../asm" }
 binfmt = { path = "../../shared/binfmt" }
 executor = { path = "../executor" }
 hal = { path = "../hal" }

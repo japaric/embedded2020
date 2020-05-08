@@ -13,24 +13,31 @@ use pac::RTC0;
 
 use crate::{time, NotSync};
 
+const STEP: u32 = 4096; // 125 ms
+
 #[tasks::declare]
 mod task {
+    use core::sync::atomic::{AtomicU16, Ordering};
+
     use pac::RTC0;
 
     use crate::{led, Interrupt0};
+
+    use super::STEP;
 
     fn init() {
         RTC0::borrow_unchecked(|rtc| unsafe {
             rtc.INTENSET
                 .write(|w| w.COMPARE0(1).COMPARE1(1).COMPARE2(1).COMPARE3(1).OVRFLW(1));
+            rtc.CC0.write(|w| w.COMPARE(super::STEP));
         });
+
+        led::Red.on();
 
         unsafe { crate::unmask0(&[Interrupt0::RTC0]) }
     }
 
     fn RTC0() {
-        semidap::trace!("RTC0");
-
         RTC0::borrow_unchecked(|rtc| {
             if rtc.EVENTS_OVRFLW.read().EVENTS_OVRFLW() != 0 {
                 semidap::error!("RTC count overflowed ... aborting");
@@ -41,7 +48,21 @@ mod task {
             }
 
             if rtc.EVENTS_COMPARE0.read().EVENTS_COMPARE() != 0 {
+                static COUNT: AtomicU16 = AtomicU16::new(0);
+
                 rtc.EVENTS_COMPARE0.zero();
+                let count = COUNT.load(Ordering::Relaxed).wrapping_add(1);
+                rtc.CC0
+                    .write(|w| w.COMPARE(u32::from(count.wrapping_add(1)) * STEP));
+                COUNT.store(count, Ordering::Relaxed);
+
+                match count % 12 {
+                    0 => led::Red.on(),
+                    1 => led::Red.off(),
+                    2 => led::Red.on(),
+                    3 => led::Red.off(),
+                    _ => {}
+                }
             }
 
             if rtc.EVENTS_COMPARE1.read().EVENTS_COMPARE() != 0 {
@@ -66,7 +87,8 @@ pub struct Timer {
     _not_sync: NotSync,
 }
 
-static TAKEN: AtomicU8 = AtomicU8::new(0);
+// NOTE timer `0` is used for the "heartbeat" task
+static TAKEN: AtomicU8 = AtomicU8::new(1);
 
 impl Timer {
     /// Claims the `Timer`

@@ -45,32 +45,30 @@ mod task {
             const IEEE802154: u8 = 15;
             radio.MODE.write(|w| w.MODE(IEEE802154));
 
-            // Channel 15: 2425 MHz
-            // const CH15: u8 = 25;
-            const CH20: u8 = 50;
+            const CH20: u8 = 50; // 2_450 MHz
             radio.FREQUENCY.write(|w| w.FREQUENCY(CH20));
 
             radio.PCNF0.write(|w| {
-                // length = 8 bits
+                // length = 8 bits (but highest bit is reserved and must be 0)
                 w.LFLEN(8)
                     // no S0
                     .S0LEN(0)
-                    // no S1 (not included in RAM)
+                    // no S1
                     .S1LEN(0)
+                    // S1 not included in RAM
                     .S1INCL(0)
                     // no code indicator
                     .CILEN(0)
                     // 32-bit zero preamble
                     .PLEN(2)
                     // LENGTH field does NOT contain the CRC
-                    .CRCINC(0)
+                    .CRCINC(1)
                     // no TERM field
                     .TERMLEN(0)
             });
 
             radio.PCNF1.write(|w| {
-                // max length of packet is 127B (MPDU) + 1B (MPDU length)
-                w.MAXLEN(Packet::CAPACITY + 1)
+                w.MAXLEN(Packet::CAPACITY + 2 /* CRC */) // payload
                     .STATLEN(0)
                     .BALEN(0)
                     // little endian
@@ -522,7 +520,7 @@ impl Packet {
     pub async fn new() -> Self {
         let buffer = P::alloc().await;
         let mut packet = Packet { buffer };
-        unsafe { packet.len_ptr_mut().write(0) }
+        unsafe { packet.len_ptr_mut().write(2) }
         packet
     }
 
@@ -532,14 +530,16 @@ impl Packet {
     pub fn copy_from_slice(&mut self, src: &[u8]) {
         let len = cmp::min(src.len(), Self::CAPACITY as usize) as u8;
         unsafe {
-            self.len_ptr_mut().write(len);
+            self.len_ptr_mut().write(len + 2 /* CRC */);
             ptr::copy_nonoverlapping(src.as_ptr(), self.data_ptr_mut(), len.into())
         }
     }
 
     /// Returns the size of this packet
     pub fn len(&self) -> u8 {
-        unsafe { self.len_ptr().read() }
+        unsafe {
+            self.len_ptr().read() - 2 /* CRC */
+        }
     }
 
     /// Changes the `len` of the packet
@@ -547,7 +547,9 @@ impl Packet {
     /// NOTE `len` will be truncated to `Self::CAPACITY` bytes
     pub fn set_len(&mut self, len: u8) {
         let len = cmp::min(len, Self::CAPACITY);
-        unsafe { self.len_ptr_mut().write(len) }
+        unsafe {
+            self.len_ptr_mut().write(len + 2 /* CRC */)
+        }
     }
 
     #[cfg(feature = "usb")]
@@ -568,11 +570,15 @@ impl Packet {
     }
 
     fn data_ptr(&self) -> *const u8 {
-        unsafe { self.len_ptr().add(1) }
+        unsafe {
+            self.len_ptr().add(1 /* PHY_HDR */)
+        }
     }
 
     fn data_ptr_mut(&mut self) -> *mut u8 {
-        unsafe { self.len_ptr_mut().add(1) }
+        unsafe {
+            self.len_ptr_mut().add(1 /* PHY_HDR */)
+        }
     }
 }
 

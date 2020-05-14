@@ -550,7 +550,7 @@ impl BulkOut {
 
                 if size != NO_DATA {
                     // NOTE the following operation handles the buffer to the `USBD` task
-                    atomic::compiler_fence(Ordering::Release);
+                    crate::dma_start();
                     // start DMA transfer
                     STARTEPOUT1();
                     semidap::info!("EPOUT1: transfer started ({}B)", size);
@@ -563,7 +563,7 @@ impl BulkOut {
             match EPOUT1_STATE.load() {
                 EpOut1State::Idle | EpOut1State::DataReady => {
                     // NOTE the `USBD` task has handled the buffer back to us
-                    atomic::compiler_fence(Ordering::Acquire);
+                    crate::dma_end();
                     Poll::Ready(())
                 }
 
@@ -605,8 +605,6 @@ impl BulkIn {
         USBD::borrow_unchecked(|usbd| {
             let len = packet.len();
 
-            // NOTE(fence) the next store hands the `packet` to the USBD task
-            atomic::compiler_fence(Ordering::Release);
             usbd.EPIN1_PTR.write(|w| w.PTR(packet.data_ptr() as u32));
             mem::forget(packet);
             usbd.EPIN1_MAXCNT.write(|w| w.MAXCNT(len));
@@ -614,6 +612,7 @@ impl BulkIn {
 
             semidap::info!("EPIN1: transfer started ({}B)", len);
 
+            crate::dma_start();
             usbd.TASKS_STARTEPIN1.write(|w| w.TASKS_STARTEPIN(1));
         });
     }

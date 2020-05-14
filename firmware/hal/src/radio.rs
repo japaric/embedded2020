@@ -379,7 +379,7 @@ impl Rx {
                     // exit loop
                     RxState::Done => {
                         // `packet` handed back to us
-                        atomic::compiler_fence(Ordering::Acquire);
+                        crate::dma_end();
 
                         RX_STATE.store(RxState::Idle);
                         retry = false;
@@ -435,9 +435,6 @@ impl Tx {
 
                             semidap::info!("TX: locked the RADIO");
 
-                            // NOTE(fence) the next store transfers ownership of `packet` to the
-                            // RADIO task
-                            atomic::compiler_fence(Ordering::Release);
                             SET_PACKETPTR(packetptr);
 
                             INTENSET_PHYEND();
@@ -474,6 +471,8 @@ impl Tx {
                             State::RxRu => Poll::Pending,
 
                             State::RxIdle => {
+                                // TX transfer will start at some point after the CCA
+                                crate::dma_start();
                                 TASKS_CCASTART();
 
                                 semidap::info!("TX: started CCA");

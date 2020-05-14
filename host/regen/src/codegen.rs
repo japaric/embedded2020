@@ -1,6 +1,4 @@
-use std::borrow::Cow;
-
-mod util;
+use std::{borrow::Cow, time::Instant};
 
 use heck::SnakeCase;
 use proc_macro2::TokenStream as TokenStream2;
@@ -10,6 +8,8 @@ use crate::{
     codegen,
     ir::{Device, Instances, Peripheral, Register},
 };
+
+mod util;
 
 pub fn device(device: &Device<'_>) -> String {
     let mut items = vec![];
@@ -168,6 +168,7 @@ fn peripheral(peripheral: &Peripheral<'_>) -> TokenStream2 {
 }
 
 fn register(register: &Register<'_>) -> TokenStream2 {
+    let start = Instant::now();
     let name = format_ident!("{}", *register.name);
     let mod_name = util::ident(&register.name.to_snake_case());
 
@@ -233,6 +234,7 @@ fn register(register: &Register<'_>) -> TokenStream2 {
                 .collect::<Vec<_>>();
             let footprint = format!("{} {{{{ {} }}}}", rname, fields.join(", "));
             let section = format!(".binfmt.{}", footprint);
+            let footprint = format!("{}@{}", footprint, (Instant::now() - start).subsec_nanos());
 
             mod_items.push(quote!(
                 /// View into the readable bitfields

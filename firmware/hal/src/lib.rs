@@ -24,9 +24,11 @@ mod clock;
 mod errata;
 pub mod led;
 mod mem;
+pub mod p0;
 #[cfg(feature = "radio")]
 pub mod radio;
 mod reset;
+pub mod spi;
 pub mod time;
 pub mod timer;
 #[cfg(feature = "usb")]
@@ -68,6 +70,16 @@ impl NotSendOrSync {
     fn new() -> Self {
         Self { inner: PhantomData }
     }
+}
+
+// NOTE must be followed by a volatile STORE operation
+fn dma_start() {
+    sync::atomic::compiler_fence(Ordering::Release)
+}
+
+// NOTE must be preced by a volatile LOAD operation
+fn dma_end() {
+    sync::atomic::compiler_fence(Ordering::Acquire)
 }
 
 #[allow(dead_code)]

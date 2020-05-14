@@ -23,7 +23,7 @@ fn main() -> Result<(), anyhow::Error> {
 
 // Audited register writes
 const AUDITED: &[&str] = &[
-    "CLOCK", "FICR", "P0", "POWER", "RADIO", "RTC0", "TWIM0", "USBD",
+    "CLOCK", "FICR", "P0", "POWER", "RADIO", "RTC0", "TWIM0", "USBD", "SPIM0",
 ];
 
 fn gen_nrf52(lib: &Path) -> Result<(), anyhow::Error> {

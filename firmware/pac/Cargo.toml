@@ -17,6 +17,7 @@ P0 = []
 POWER = []
 RADIO = []
 RTC0 = []
+SPIM0 = []
 USBD = []
 # mainly used to generate docs
 all = [
@@ -26,5 +27,6 @@ all = [
   "POWER",
   "RADIO",
   "RTC0",
+  "SPIM0",
   "USBD",
 ]

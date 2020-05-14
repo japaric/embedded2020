@@ -25,7 +25,7 @@ features = ["DCB", "DWT", "NVIC"]
 path = "../../shared/cm"
 
 [dependencies.pac]
-features = ["binfmt", "CLOCK", "FICR", "P0", "RTC0"]
+features = ["binfmt", "CLOCK", "FICR", "P0", "RTC0", "SPIM0"]
 path = "../pac"
 
 [features]

@@ -4,7 +4,7 @@
 use core::convert::TryFrom;
 use core::{
     cmp, mem, ops, ptr, slice,
-    sync::atomic::{self, AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, Ordering},
     task::Poll,
 };
 

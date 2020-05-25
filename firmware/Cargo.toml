@@ -3,6 +3,7 @@ members = [
   "apps",
   "asm",
   "async-core",
+  "drivers/mrf24j40",
   "executor",
   "hal",
   "pac",

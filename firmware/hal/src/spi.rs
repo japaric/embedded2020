@@ -8,10 +8,21 @@ use core::{
 
 use pac::{p0, SPIM0};
 
-use crate::{p0::Pin, NotSendOrSync};
+use crate::{p0::Pin, Interrupt0, NotSendOrSync};
 
 // TODO hand out up to 3 SPIs
 static TAKEN: AtomicBool = AtomicBool::new(false);
+
+#[allow(non_snake_case)]
+#[no_mangle]
+fn SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0() {
+    semidap::trace!("SPIM0");
+
+    DONE.store(true, Ordering::Relaxed);
+    SPIM0::borrow_unchecked(|spim| spim.EVENTS_END.zero());
+}
+
+static DONE: AtomicBool = AtomicBool::new(false);
 
 /// Host-mode SPI
 pub struct Spi {
@@ -34,6 +45,11 @@ impl Spi {
             // MISO must be configured as an input (this is the default after reset)
 
             SPIM0::borrow_unchecked(|spim| {
+                unsafe {
+                    spim.INTENSET.write(|w| w.END(1));
+                    crate::unmask0(&[Interrupt0::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0]);
+                }
+
                 // MSB first & mode 0 is the default after reset
                 spim.PSEL_MISO.write(|w| w.CONNECT(0).PORT(0).PIN(miso.0));
                 spim.PSEL_MOSI.write(|w| w.CONNECT(0).PORT(0).PIN(mosi.0));
@@ -103,21 +119,19 @@ impl Spi {
                 }
             }
 
+            DONE.store(false, Ordering::Relaxed);
+
             crate::dma_start();
             spim.TASKS_START.write(|w| w.TASKS_START(1));
         });
 
         crate::poll_fn(|| {
-            SPIM0::borrow_unchecked(|spim| {
-                if spim.EVENTS_END.read().bits() != 0 {
-                    crate::dma_end();
-                    spim.EVENTS_END.zero();
-
-                    Poll::Ready(())
-                } else {
-                    Poll::Pending
-                }
-            })
+            if DONE.load(Ordering::Relaxed) {
+                crate::dma_end();
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
         })
         .await;
     }

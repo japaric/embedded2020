@@ -1,0 +1,10 @@
+[package]
+authors = ["Jorge Aparicio <jorge@japaric.io>"]
+edition = "2018"
+name = "mrf24j40"
+version = "0.1.0"
+
+[dependencies]
+binfmt = { path = "../../../shared/binfmt" }
+hal = { path = "../../hal" }
+semidap = { path = "../../semidap" }

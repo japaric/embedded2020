@@ -60,8 +60,77 @@ pub struct P0 {
     pub pin31: Pin,
 }
 
+/// Output level
+#[derive(Clone, Copy, PartialEq)]
+pub enum Level {
+    /// Low level (0)
+    Low,
+    /// High level (1)
+    High,
+}
+
+/// Output pin
+pub struct Output(pub(crate) u8);
+
+impl Output {
+    /// Changes the output `level` of the pin
+    pub fn set(&mut self, level: Level) {
+        let mask = 1 << self.0;
+
+        unsafe {
+            match level {
+                Level::Low => pac::p0::OUTCLR::address().write_volatile(mask),
+                Level::High => pac::p0::OUTSET::address().write_volatile(mask),
+            }
+        }
+    }
+
+    /// Sets the pin high
+    pub fn set_high(&mut self) {
+        self.set(Level::High)
+    }
+
+    /// Sets the pin low
+    pub fn set_low(&mut self) {
+        self.set(Level::Low)
+    }
+}
+
 /// P0 pin
 pub struct Pin(pub(crate) u8);
+
+impl Pin {
+    /// Configures the pin as an input pin
+    #[cfg(TODO)]
+    pub fn into_input(self, pullup: Level) -> Input {
+        unsafe {
+            let (pu, sense) = match pullup {
+                Level::Low => (1, 2),
+                Level::High => (3, 3),
+            };
+
+            let mut w = pac::p0::pin_cnf0::W::zero();
+            w.INPUT(1).PULL(pu).SENSE(sense);
+            pac::p0::PIN_CNF0::address()
+                .offset(self.0.into())
+                .write_volatile(w.into());
+        }
+
+        Input(self.0)
+    }
+
+    /// Configures the pin as an output pin
+    pub fn into_output(self, level: Level) -> Output {
+        unsafe {
+            if level == Level::High {
+                pac::p0::OUTSET::address().write_volatile(1 << self.0);
+                pac::p0::DIRSET::address().write_volatile(1 << self.0);
+            }
+
+            Output(self.0)
+        }
+    }
+}
 
 static TAKEN: AtomicBool = AtomicBool::new(false);
 

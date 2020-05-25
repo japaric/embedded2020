@@ -27,8 +27,7 @@ mod task {
 
     fn init() {
         RTC0::borrow_unchecked(|rtc| unsafe {
-            rtc.INTENSET
-                .write(|w| w.COMPARE0(1).COMPARE1(1).COMPARE2(1).COMPARE3(1).OVRFLW(1));
+            rtc.INTENSET.write(|w| w.COMPARE0(1).OVRFLW(1));
             rtc.CC0.write(|w| w.COMPARE(super::STEP));
         });
 
@@ -67,14 +66,17 @@ mod task {
 
             if rtc.EVENTS_COMPARE1.read().EVENTS_COMPARE() != 0 {
                 rtc.EVENTS_COMPARE1.zero();
+                rtc.INTENCLR.write(|w| w.COMPARE1(1));
             }
 
             if rtc.EVENTS_COMPARE2.read().EVENTS_COMPARE() != 0 {
                 rtc.EVENTS_COMPARE2.zero();
+                rtc.INTENCLR.write(|w| w.COMPARE2(1));
             }
 
             if rtc.EVENTS_COMPARE3.read().EVENTS_COMPARE() != 0 {
                 rtc.EVENTS_COMPARE3.zero();
+                rtc.INTENCLR.write(|w| w.COMPARE3(1));
             }
         });
     }
@@ -148,14 +150,18 @@ impl Future for Wait<'_> {
                 let i = self.timer.i;
                 let end = time::now().wrapping_add(diff);
                 RTC0::borrow_unchecked(|rtc| {
-                    if i == 0 {
-                        rtc.CC0.write(|w| w.COMPARE(end))
-                    } else if i == 1 {
-                        rtc.CC1.write(|w| w.COMPARE(end))
+                    // if i == 0 {
+                    //     rtc.CC0.write(|w| w.COMPARE(end))
+                    // } else
+                    if i == 1 {
+                        rtc.CC1.write(|w| w.COMPARE(end));
+                        unsafe { rtc.INTENSET.write(|w| w.COMPARE1(1)) }
                     } else if i == 2 {
-                        rtc.CC2.write(|w| w.COMPARE(end))
+                        rtc.CC2.write(|w| w.COMPARE(end));
+                        unsafe { rtc.INTENSET.write(|w| w.COMPARE2(1)) }
                     } else {
-                        rtc.CC3.write(|w| w.COMPARE(end))
+                        rtc.CC3.write(|w| w.COMPARE(end));
+                        unsafe { rtc.INTENSET.write(|w| w.COMPARE3(1)) }
                     }
                 });
                 self.state = State::Started { end };

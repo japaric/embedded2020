@@ -25,6 +25,7 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
     use usb2::{
         configuration::{self, bmAttributes},
         device::{self, bMaxPacketSize0},
+        interface,
     };
 
     const PACKET_SIZE: bMaxPacketSize0 = bMaxPacketSize0::B64;
@@ -51,7 +52,7 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
         let config_desc = configuration::Descriptor {
             bConfigurationValue: NonZeroU8::new(CONFIG_VAL).unwrap(),
             bMaxPower: 250, // 500 mA
-            bNumInterfaces: 0,
+            bNumInterfaces: NonZeroU8::new(1).unwrap(),
             bmAttributes: bmAttributes {
                 remote_wakeup: false,
                 self_powered: true,
@@ -62,6 +63,18 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
         };
 
         bytes.extend_from_slice(&config_desc.bytes());
+
+        let iface_desc = interface::Descriptor {
+            bAlternativeSetting: 0,
+            bInterfaceNumber: 0,
+            bInterfaceClass: 0,
+            bInterfaceSubClass: 0,
+            bInterfaceProtocol: 0,
+            bNumEndpoints: 0,
+            iInterface: 0,
+        };
+
+        bytes.extend_from_slice(&iface_desc.bytes());
 
         let total_length = bytes.len();
         assert!(

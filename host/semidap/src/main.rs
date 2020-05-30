@@ -382,7 +382,6 @@ fn not_main() -> Result<i32, anyhow::Error> {
 
         // only handle a syscall when the device is halted, but first try to
         // drain the buffer
-        // TODO(?) merge this with reading the cursors using an atomic command
         if observed_empty {
             if dap.is_halted()? {
                 if twice {
@@ -394,7 +393,7 @@ fn not_main() -> Result<i32, anyhow::Error> {
         }
     }
 
-    dap.halt()?;
+    dap.sysresetreq(true)?;
 
     Ok(0)
 }

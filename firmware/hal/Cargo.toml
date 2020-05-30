@@ -9,7 +9,7 @@ version = "0.0.0"
 [build-dependencies]
 consts = { path = "../../shared/consts" }
 quote = "1"
-usb2 = { path = "../../shared/usb2" }
+usb2 = { git = "https://github.com/japaric/usb2" }
 
 [dependencies]
 asm = { path = "../asm" }
@@ -18,7 +18,7 @@ consts = { path = "../../shared/consts" }
 pool = { path = "../pool" }
 semidap = { path = "../semidap" }
 tasks = { path = "../tasks" }
-usb2 = { path = "../../shared/usb2" }
+usb2 = { git = "https://github.com/japaric/usb2" }
 
 [dependencies.cm]
 features = ["DCB", "DWT", "NVIC"]

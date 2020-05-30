@@ -1,10 +1,8 @@
 //! USB device
 
 use core::{
-    cmp,
-    convert::TryFrom,
-    mem, ops, ptr, slice,
-    sync::atomic::{self, AtomicBool, AtomicU8, Ordering},
+    cmp, mem, ops, ptr, slice,
+    sync::atomic::{AtomicBool, AtomicU8, Ordering},
     task::Poll,
 };
 
@@ -14,11 +12,9 @@ use pac::{
     POWER, USBD,
 };
 use pool::Box;
-use usb2::{bRequest, DescriptorType};
+use usb2::{GetDescriptor, StandardRequest};
 
 use crate::{atomic::Atomic, mem::P, Interrupt1, NotSendOrSync};
-
-const NCONFIGS: u8 = 1;
 
 include!(concat!(env!("OUT_DIR"), "/descs.rs"));
 
@@ -189,7 +185,7 @@ mod task {
                     semidap::info!("USB reset");
 
                     match USB_STATE {
-                        usb2::State::Default | usb2::State::Address => {
+                        usb2::State::Default | usb2::State::Address { .. } => {
                             *USB_STATE = usb2::State::Default;
                         }
 
@@ -207,7 +203,9 @@ mod task {
                         super::unreachable()
                     }
 
-                    super::ep0setup(USB_STATE, EP0_STATE);
+                    if super::ep0setup(USB_STATE, EP0_STATE).is_err() {
+                        super::EP0STALL()
+                    }
                 }
 
                 UsbdEvent::EP0DATADONE => {
@@ -292,130 +290,169 @@ mod task {
     }
 }
 
-fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) {
+fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), ()> {
     let bmrequesttype = BMREQUESTTYPE();
     let brequest = BREQUEST();
+    let wvalue = WVALUE();
+    let windex = WINDEX();
+    let wlength = WLENGTH();
 
-    match (bmrequesttype, bRequest::from(brequest)) {
-        (0b1000_0000, bRequest::GET_DESCRIPTOR) => {
-            // control read transfer
+    let req =
+        StandardRequest::parse(bmrequesttype, brequest, wvalue, windex, wlength).map_err(|_| {
+            semidap::error!(
+                "EP0SETUP: non-standard request ({}, {}, {}, {}, {})",
+                bmrequesttype,
+                brequest,
+                wvalue,
+                windex,
+                wlength
+            );
+        })?;
 
-            let desc_type = WVALUEH();
-            let desc_index = WVALUEL();
-            let language_id = WINDEX();
-            let wlength = WLENGTH();
+    match req {
+        StandardRequest::GetDescriptor { descriptor, length } => {
+            semidap::info!("GET_DESCRIPTOR [{}] ..", length as u8);
 
-            if let Ok(desc_type) = DescriptorType::try_from(desc_type) {
-                semidap::info!(
-                    "EP0SETUP: GET_DESCRIPTOR {} {} (lang={}, length={})",
-                    desc_type,
-                    desc_index,
-                    language_id,
-                    wlength
-                );
+            match descriptor {
+                GetDescriptor::Device => {
+                    semidap::info!("GET_DESCRIPTOR Device");
 
-                match desc_type {
-                    DescriptorType::DEVICE if desc_index == 0 && language_id == 0 => {
+                    start_epin0(
+                        DEVICE_DESC.get(..length.into()).unwrap_or(&DEVICE_DESC),
+                        ep_state,
+                    );
+                }
+
+                GetDescriptor::DeviceQualifier => {
+                    semidap::warn!("GET_DESCRIPTOR DeviceQualifier is not supported");
+                    return Err(());
+                }
+
+                GetDescriptor::Configuration { index } => {
+                    semidap::info!("GET_DESCRIPTOR Configuration {}", index);
+
+                    if index == 0 {
                         start_epin0(
-                            DEVICE_DESC.get(..wlength.into()).unwrap_or(&DEVICE_DESC),
+                            CONFIG_DESC.get(..length.into()).unwrap_or(&CONFIG_DESC),
                             ep_state,
                         );
+                    } else {
+                        semidap::error!("out of bounds GET_DESCRIPTOR Configuration request");
+                        return Err(());
                     }
+                }
 
-                    DescriptorType::CONFIGURATION if language_id == 0 => {
-                        if desc_index == 0 {
-                            start_epin0(
-                                CONFIG_DESC.get(..wlength.into()).unwrap_or(&CONFIG_DESC),
-                                ep_state,
-                            );
-                        } else {
-                            // only a single configuration is supported
-                            semidap::error!(
-                                "host requested a non-existent configuration descriptor"
-                            );
-                            EP0STALL()
+                _ => {
+                    semidap::error!("unsupported GET_DESCRIPTOR {}", wvalue);
+                    todo();
+                }
+            }
+        }
+
+        StandardRequest::SetAddress {
+            address: new_address,
+        } => {
+            // nothing to do here; the hardware will complete the transaction
+            semidap::info!(
+                "SET_ADDRESS {}",
+                new_address.map(|nz| nz.get()).unwrap_or(0)
+            );
+
+            match *usb_state {
+                usb2::State::Default => {
+                    if let Some(address) = new_address {
+                        // move to the Address state
+                        *usb_state = usb2::State::Address(address);
+
+                        semidap::info!("moving to the Address state");
+                    } else {
+                        // stay in the Default state
+                    }
+                }
+
+                usb2::State::Address(curr_address) => {
+                    if let Some(new_address) = new_address {
+                        if new_address != curr_address {
+                            *usb_state = usb2::State::Address(new_address);
+
+                            semidap::info!("changing host assigned address");
                         }
+                    } else {
+                        *usb_state = usb2::State::Default;
+
+                        semidap::info!("returning to the Default state");
                     }
+                }
 
-                    // not supported; we are a full-speed device
-                    DescriptorType::DEVICE_QUALIFIER => {
-                        semidap::warn!("EP0: full-speed devices do not support this descriptor");
-                        EP0STALL()
+                usb2::State::Configured { .. } => {
+                    semidap::error!("invalid request in the Configured state");
+                    return Err(());
+                }
+            }
+
+            // nothing else to do here; the hardware will complete the transaction
+        }
+
+        StandardRequest::SetConfiguration { value } => {
+            semidap::info!(
+                "SET_CONFIGURATION {}",
+                value.map(|nz| nz.get()).unwrap_or(0)
+            );
+
+            match *usb_state {
+                usb2::State::Default => {
+                    semidap::error!("invalid request in the Default state");
+                    return Err(());
+                }
+
+                usb2::State::Address(address) => {
+                    if let Some(value) = value {
+                        if value == CONFIG_VAL {
+                            semidap::info!("moving to the Configured state");
+                            *usb_state = usb2::State::Configured { address, value };
+
+                        // TODO enable endpoints
+                        } else {
+                            semidap::error!("requested configuration is not supported");
+                            return Err(());
+                        }
+                    } else {
+                        // stay in the Address state
                     }
-
-                    _ => todo(),
-                }
-            } else {
-                semidap::error!("EP0SETUP: invalid GET_DESCRIPTOR request");
-                EP0STALL()
-            }
-        }
-
-        (0, bRequest::SET_ADDRESS) => {
-            #[cfg(debug_assertions)]
-            if *usb_state != usb2::State::Default {
-                unreachable()
-            }
-
-            let addr = WVALUE();
-            let windex = WINDEX();
-            let wlength = WLENGTH();
-
-            if addr < 128 && windex == 0 && wlength == 0 {
-                let addr = addr as u8;
-                semidap::info!("EP0SETUP: SET_ADDRESS {}", addr);
-
-                // no need to issue a status stage; the peripheral takes care of that
-                *usb_state = usb2::State::Address;
-            } else {
-                // invalid request
-                semidap::error!("EP0SETUP: invalid SET_ADDRESS request");
-                EP0STALL()
-            }
-        }
-
-        (0, bRequest::SET_CONFIGURATION) => {
-            let configuration = WVALUEL();
-            let wvalueh = WVALUEH();
-            let windex = WINDEX();
-            let wlength = WLENGTH();
-
-            if wvalueh == 0 && windex == 0 && wlength == 0 && configuration <= NCONFIGS {
-                #[cfg(debug_assertions)]
-                if *usb_state == usb2::State::Default {
-                    unreachable()
                 }
 
-                semidap::info!("EP0SETUP: SET_CONFIGURATION {}", configuration);
-
-                if configuration == 0 {
-                    *usb_state = usb2::State::Address;
-
-                    // need to cancel ongoing transfers
-                    todo()
-                } else {
-                    *usb_state = usb2::State::Configured { configuration };
-
-                    // enable bulk endpoints
-                    USBD::borrow_unchecked(|usbd| {
-                        usbd.EPINEN.write(|w| w.IN0(1).IN1(1).IN2(1));
-                        usbd.EPOUTEN.write(|w| w.OUT0(1).OUT1(1));
-                        usbd.SIZE_EPOUT1.write(|w| w.SIZE(0));
-
-                        // no data transfer; issue a status stage
-                        usbd.TASKS_EP0STATUS.write(|w| w.TASKS_EP0STATUS(1));
-                    });
+                usb2::State::Configured {
+                    address,
+                    value: curr_value,
+                } => {
+                    if let Some(new_value) = value {
+                        if new_value == curr_value {
+                            // no change
+                        } else {
+                            // other configurations are not supported
+                            semidap::error!("requested configuration is not supported");
+                            return Err(());
+                        }
+                    } else {
+                        semidap::info!("returning to the Address state");
+                        *usb_state = usb2::State::Address(address);
+                    }
                 }
-            } else {
-                // invalid request
-                semidap::error!("invalid SET_CONFIGURATION request");
-                EP0STALL()
             }
+
+            // issue a status stage to acknowledge the request
+            USBD::borrow_unchecked(|usbd| {
+                usbd.TASKS_EP0STATUS.write(|w| w.TASKS_EP0STATUS(1));
+            });
         }
 
-        // TODO we need to handle more standard requests
-        _ => todo(),
+        _ => {
+            semidap::error!("EP0SETUP: request is not supported");
+            return Err(());
+        }
     }
+
+    Ok(())
 }
 
 fn start_epin0(bytes: &'static [u8], ep_state: &mut Ep0State) {
@@ -904,16 +941,12 @@ fn EP0STALL() {
 
 #[allow(non_snake_case)]
 fn BMREQUESTTYPE() -> u8 {
-    let r = USBD::borrow_unchecked(|usbd| usbd.BMREQUESTTYPE.read());
-    semidap::debug!("{}", r);
-    r.bits()
+    USBD::borrow_unchecked(|usbd| usbd.BMREQUESTTYPE.read().bits())
 }
 
 #[allow(non_snake_case)]
 fn BREQUEST() -> u8 {
-    let r = USBD::borrow_unchecked(|usbd| usbd.BREQUEST.read());
-    semidap::debug!("{}", r);
-    r.bits()
+    USBD::borrow_unchecked(|usbd| usbd.BREQUEST.read().bits())
 }
 
 #[allow(non_snake_case)]
@@ -921,16 +954,6 @@ fn WVALUE() -> u16 {
     USBD::borrow_unchecked(|usbd| {
         u16::from(usbd.WVALUEL.read().bits()) | (u16::from(usbd.WVALUEH.read().bits()) << 8)
     })
-}
-
-#[allow(non_snake_case)]
-fn WVALUEH() -> u8 {
-    USBD::borrow_unchecked(|usbd| usbd.WVALUEH.read().bits())
-}
-
-#[allow(non_snake_case)]
-fn WVALUEL() -> u8 {
-    USBD::borrow_unchecked(|usbd| usbd.WVALUEL.read().bits())
 }
 
 #[allow(non_snake_case)]

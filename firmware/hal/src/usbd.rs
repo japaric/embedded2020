@@ -12,7 +12,7 @@ use pac::{
     POWER, USBD,
 };
 use pool::Box;
-use usb2::{GetDescriptor, StandardRequest};
+use usb2::{cdc::acm, GetDescriptor, Request, StandardRequest};
 
 use crate::{atomic::Atomic, mem::P, Interrupt1, NotSendOrSync};
 
@@ -24,17 +24,14 @@ static EPOUT1_SIZE: AtomicU8 = AtomicU8::new(0);
 
 #[tasks::declare]
 mod task {
-    use core::{mem::MaybeUninit, sync::atomic::Ordering};
+    use core::mem::MaybeUninit;
 
     use pac::{CLOCK, USBD};
-    use pool::{Box, Node};
+    use pool::Node;
 
     use crate::{clock, errata, mem::P, Interrupt0, Interrupt1};
 
-    use super::{
-        Ep0State, EpOut1State, Packet, PowerEvent, PowerState, UsbdEvent, EPIN1_BUSY, EPOUT1_SIZE,
-        EPOUT1_STATE,
-    };
+    use super::{Ep0State, PowerEvent, PowerState, UsbdEvent};
 
     static mut PCSTATE: PowerState = PowerState::Off;
 
@@ -228,59 +225,37 @@ mod task {
                     }
                 }
 
-                UsbdEvent::ENDEPIN1 => {
-                    // return memory to the pool
-                    unsafe {
-                        drop(Box::<P>::from_raw(
-                            (super::EPIN1_PTR() as *mut u8)
-                                .offset(-(Packet::PADDING as isize))
-                                .cast(),
-                        ))
-                    }
-                    semidap::info!("EPIN1: memory freed");
+                // TODO remove
+                UsbdEvent::ENDEPIN2 => {
+                    // nothing to do here
                 }
 
-                UsbdEvent::ENDEPOUT1 => {
-                    if EPOUT1_STATE.load() != EpOut1State::TransferInProgress {
-                        #[cfg(debug_assertions)]
-                        super::unreachable()
-                    }
+                UsbdEvent::ENDEPOUT2 => super::todo(),
 
-                    super::EPOUT1_STATE.store(EpOut1State::Idle);
-                    semidap::info!("EPOUT1: transfer done");
-                }
-
+                // TODO remove?
                 UsbdEvent::EPDATA => {
-                    let epdatastatus = super::EPDATASTATUS();
+                    let status = super::EPDATASTATUS();
+                    semidap::info!("{}", status);
+                    if status.EPIN2() != 0 {
+                        use core::sync::atomic::{AtomicU8, Ordering};
 
-                    if epdatastatus.EPIN1() != 0 {
-                        semidap::info!("EPIN1: transfer done");
-                        EPIN1_BUSY.store(false, Ordering::Relaxed);
-                    }
+                        static X: AtomicU8 = AtomicU8::new(0);
 
-                    if epdatastatus.EPOUT1() != 0 {
-                        let state = EPOUT1_STATE.load();
-                        match state {
-                            EpOut1State::Idle => {
-                                semidap::info!("EPOUT1: data ready");
-                                EPOUT1_STATE.store(EpOut1State::DataReady)
-                            }
-
-                            EpOut1State::BufferReady => {
-                                EPOUT1_STATE.store(EpOut1State::TransferInProgress);
-                                let size = super::SIZE_EPOUT1();
-                                EPOUT1_SIZE.store(size, Ordering::Relaxed);
-                                super::EPOUT1_MAXCNT(size);
-                                super::STARTEPOUT1();
-                                semidap::info!("EPOUT1: transfer started ({}B)", size);
-                            }
-
-                            EpOut1State::DataReady | EpOut1State::TransferInProgress =>
-                            {
-                                #[cfg(debug_assertions)]
-                                super::unreachable()
-                            }
+                        let x = X.load(Ordering::Relaxed);
+                        if x < 3 {
+                            USBD::borrow_unchecked(|usbd| {
+                                usbd.EPIN2_MAXCNT.write(|w| w.MAXCNT(0));
+                                usbd.TASKS_STARTEPIN2.write(|w| w.TASKS_STARTEPIN(1));
+                            });
+                            X.store(x + 1, Ordering::Relaxed);
                         }
+                    }
+                    if status.EPOUT2() != 0 {
+                        USBD::borrow_unchecked(|usbd| {
+                            semidap::info!("{}", usbd.SIZE_EPOUT2.read());
+                            // fetch next packet
+                            usbd.SIZE_EPOUT2.write(|w| w.SIZE(0));
+                        });
                     }
                 }
             },
@@ -297,20 +272,19 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
     let windex = WINDEX();
     let wlength = WLENGTH();
 
-    let req =
-        StandardRequest::parse(bmrequesttype, brequest, wvalue, windex, wlength).map_err(|_| {
-            semidap::error!(
-                "EP0SETUP: non-standard request ({}, {}, {}, {}, {})",
-                bmrequesttype,
-                brequest,
-                wvalue,
-                windex,
-                wlength
-            );
-        })?;
+    let req = Request::parse(bmrequesttype, brequest, wvalue, windex, wlength).map_err(|_| {
+        semidap::error!(
+            "EP0SETUP: unknown request ({}, {}, {}, {}, {})",
+            bmrequesttype,
+            brequest,
+            wvalue,
+            windex,
+            wlength
+        );
+    })?;
 
     match req {
-        StandardRequest::GetDescriptor { descriptor, length } => {
+        Request::Standard(StandardRequest::GetDescriptor { descriptor, length }) => {
             semidap::info!("GET_DESCRIPTOR [{}] ..", length as u8);
 
             match descriptor {
@@ -349,9 +323,9 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
             }
         }
 
-        StandardRequest::SetAddress {
+        Request::Standard(StandardRequest::SetAddress {
             address: new_address,
-        } => {
+        }) => {
             // nothing to do here; the hardware will complete the transaction
             semidap::info!(
                 "SET_ADDRESS {}",
@@ -393,7 +367,7 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
             // nothing else to do here; the hardware will complete the transaction
         }
 
-        StandardRequest::SetConfiguration { value } => {
+        Request::Standard(StandardRequest::SetConfiguration { value }) => {
             semidap::info!(
                 "SET_CONFIGURATION {}",
                 value.map(|nz| nz.get()).unwrap_or(0)
@@ -411,7 +385,18 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
                             semidap::info!("moving to the Configured state");
                             *usb_state = usb2::State::Configured { address, value };
 
-                        // TODO enable endpoints
+                            USBD::borrow_unchecked(|usbd| {
+                                usbd.EPINEN.write(|w| w.IN0(1).IN1(1).IN2(1));
+                                usbd.EPOUTEN.write(|w| w.OUT0(1).OUT2(1));
+                                usbd.SIZE_EPOUT2.write(|w| w.SIZE(0));
+
+                                // FIXME remove
+                                #[repr(align(4))]
+                                struct Align4([u8; 6]);
+                                static S: Align4 = Align4([b'H', b'e', b'l', b'l', b'o', b'\n']);
+                                usbd.EPIN2_PTR.write(|w| w.PTR(S.0.as_ptr() as u32));
+                                usbd.EPIN2_MAXCNT.write(|w| w.MAXCNT(S.0.len() as u8));
+                            })
                         } else {
                             semidap::error!("requested configuration is not supported");
                             return Err(());
@@ -434,6 +419,7 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
                             return Err(());
                         }
                     } else {
+                        // TODO disable endpoints and transfers
                         semidap::info!("returning to the Address state");
                         *usb_state = usb2::State::Address(address);
                     }
@@ -441,9 +427,35 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
             }
 
             // issue a status stage to acknowledge the request
-            USBD::borrow_unchecked(|usbd| {
-                usbd.TASKS_EP0STATUS.write(|w| w.TASKS_EP0STATUS(1));
-            });
+            ep0status()
+        }
+
+        Request::Acm(acm::Request::SetLineCoding { interface }) => {
+            semidap::info!("SET_LINE_CODING {}", interface);
+
+            // FIXME read host data
+            return Err(());
+        }
+
+        Request::Acm(acm::Request::SetControlLineState(cls)) => {
+            semidap::info!(
+                "SET_CONTROL_LINE_STATE {} rts={} dte_present={}",
+                cls.interface,
+                cls.rts as u8,
+                cls.dte_present as u8
+            );
+
+            static ONCE: AtomicBool = AtomicBool::new(false);
+            if !ONCE.load(Ordering::Relaxed) {
+                USBD::borrow_unchecked(|usbd| {
+                    usbd.TASKS_STARTEPIN2.write(|w| w.TASKS_STARTEPIN(1));
+                });
+                ONCE.store(true, Ordering::Relaxed);
+            }
+
+            // issue a status stage to acknowledge the request
+            semidap::info!("ACM request acknowledged");
+            ep0status()
         }
 
         _ => {
@@ -737,6 +749,7 @@ enum Ep0State {
     Write { leftover: u16 },
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq)]
 #[repr(u8)]
 enum EpOut1State {
@@ -787,8 +800,8 @@ impl PowerEvent {
 
 #[derive(Clone, Copy, binDebug, PartialEq)]
 enum UsbdEvent {
-    ENDEPIN1,
-    ENDEPOUT1,
+    ENDEPIN2,
+    ENDEPOUT2,
     EP0SETUP,
     EP0DATADONE,
     EPDATA,
@@ -819,14 +832,14 @@ impl UsbdEvent {
                 return Some(UsbdEvent::EP0SETUP);
             }
 
-            if usbd.EVENTS_ENDEPIN1.read().bits() != 0 {
-                usbd.EVENTS_ENDEPIN1.zero();
-                return Some(UsbdEvent::ENDEPIN1);
+            if usbd.EVENTS_ENDEPIN2.read().bits() != 0 {
+                usbd.EVENTS_ENDEPIN2.zero();
+                return Some(UsbdEvent::ENDEPIN2);
             }
 
-            if usbd.EVENTS_ENDEPOUT1.read().bits() != 0 {
-                usbd.EVENTS_ENDEPOUT1.zero();
-                return Some(UsbdEvent::ENDEPOUT1);
+            if usbd.EVENTS_ENDEPOUT2.read().bits() != 0 {
+                usbd.EVENTS_ENDEPOUT2.zero();
+                return Some(UsbdEvent::ENDEPOUT2);
             }
 
             if usbd.EVENTS_EPDATA.read().bits() != 0 {
@@ -891,7 +904,7 @@ fn EPDATASTATUS() -> epdatastatus::R {
 }
 
 // NOTE(borrow_unchecked) all these are either single instruction reads w/o side effects or single
-// instruction writes to registers won't be RMW-ed
+// instruction writes to registers that won't be RMW-ed
 fn connect() {
     USBD::borrow_unchecked(|usbd| usbd.USBPULLUP.write(|w| w.CONNECT(1)));
     semidap::info!("pulled D+ up");
@@ -913,6 +926,7 @@ fn EPINEN() -> epinen::R {
     USBD::borrow_unchecked(|usbd| usbd.EPINEN.read())
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 fn EPIN1_PTR() -> u32 {
     USBD::borrow_unchecked(|usbd| usbd.EPIN1_PTR.read().bits())
@@ -968,6 +982,12 @@ fn WLENGTH() -> u16 {
     USBD::borrow_unchecked(|usbd| {
         u16::from(usbd.WLENGTHL.read().bits()) | (u16::from(usbd.WLENGTHH.read().bits()) << 8)
     })
+}
+
+fn ep0status() {
+    USBD::borrow_unchecked(|usbd| {
+        usbd.TASKS_EP0STATUS.write(|w| w.TASKS_EP0STATUS(1));
+    });
 }
 
 fn suspend() {

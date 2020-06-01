@@ -23,18 +23,20 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
 
     use quote::quote;
     use usb2::{
+        cdc::{self, acm, call, header, union},
         configuration::{self, bmAttributes},
         device::{self, bMaxPacketSize0},
-        interface,
+        endpoint, ia, interface, Direction, Endpoint,
     };
 
     const PACKET_SIZE: bMaxPacketSize0 = bMaxPacketSize0::B64;
     const CONFIG_VAL: u8 = 1;
 
     let device_desc = device::Descriptor {
-        bDeviceClass: 0,
-        bDeviceSubClass: 0,
-        bDeviceProtocol: 0,
+        // IAD model
+        bDeviceClass: 0xEF,
+        bDeviceSubClass: 2,
+        bDeviceProtocol: 1,
 
         bMaxPacketSize0: bMaxPacketSize0::B64,
         bNumConfigurations: NonZeroU8::new(1).unwrap(),
@@ -49,36 +51,140 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
     fn full_config_desc() -> Vec<u8> {
         let mut bytes = vec![];
 
-        let config_desc = configuration::Descriptor {
+        let config = configuration::Descriptor {
             bConfigurationValue: NonZeroU8::new(CONFIG_VAL).unwrap(),
             bMaxPower: 250, // 500 mA
-            bNumInterfaces: NonZeroU8::new(1).unwrap(),
+            bNumInterfaces: NonZeroU8::new(2).unwrap(),
             bmAttributes: bmAttributes {
                 remote_wakeup: false,
-                self_powered: true,
+                self_powered: false,
             },
             iConfiguration: None,
             // NOTE this will be fixed at the end of this function
             wTotalLength: 0,
         };
 
-        bytes.extend_from_slice(&config_desc.bytes());
+        bytes.extend_from_slice(&config.bytes());
 
-        let iface_desc = interface::Descriptor {
-            bAlternativeSetting: 0,
-            bInterfaceNumber: 0,
-            bInterfaceClass: 0,
-            bInterfaceSubClass: 0,
-            bInterfaceProtocol: 0,
-            bNumEndpoints: 0,
-            iInterface: 0,
-        };
+        {
+            let comm = cdc::Class::Communications {
+                subclass: cdc::SubClass::AbstractControlModel,
+                protocol: cdc::Protocol::ATCommands,
+            };
 
-        bytes.extend_from_slice(&iface_desc.bytes());
+            let ia = ia::Descriptor {
+                bFirstInterface: 0,
+                bFunctionClass: comm.class(),
+                bFunctionSubClass: comm.subclass(),
+                bFunctionProtocol: comm.protocol(),
+                bInterfaceCount: NonZeroU8::new(2).unwrap(),
+                iFunction: None,
+            };
+
+            bytes.extend_from_slice(&ia.bytes());
+
+            let iface0 = interface::Descriptor {
+                bAlternativeSetting: 0,
+                bInterfaceNumber: 0,
+                bInterfaceClass: comm.class().get(),
+                bInterfaceSubClass: comm.subclass(),
+                bInterfaceProtocol: comm.protocol(),
+                bNumEndpoints: 1,
+                iInterface: None,
+            };
+
+            bytes.extend_from_slice(&iface0.bytes());
+
+            let header = header::Descriptor { bcdCDC: 0x01_10 };
+
+            bytes.extend_from_slice(&header.bytes());
+
+            let call = call::Descriptor {
+                bmCapabilities: call::Capabilities {
+                    call_management: false,
+                    data_class: false,
+                },
+                bDataInterface: 1,
+            };
+
+            bytes.extend_from_slice(&call.bytes());
+
+            let acm = acm::Descriptor {
+                bmCapabilities: acm::Capabilities {
+                    comm_features: false,
+                    line_serial: false, // ?
+                    network_connection: false,
+                    send_break: false, // ?
+                },
+            };
+
+            bytes.extend_from_slice(&acm.bytes());
+
+            let union = union::Descriptor {
+                bControlInterface: 0,
+                bSubordinateInterface0: 1,
+            };
+
+            bytes.extend_from_slice(&union.bytes());
+
+            let ep1in = endpoint::Descriptor {
+                bEndpointAddress: Endpoint {
+                    direction: Direction::In,
+                    number: 1,
+                },
+                bInterval: 32, // ??
+                ty: endpoint::Type::Interrupt {
+                    transactions_per_microframe: endpoint::Transactions::_1,
+                },
+                max_packet_size: PACKET_SIZE as u16,
+            };
+
+            bytes.extend_from_slice(&ep1in.bytes());
+        }
+
+        {
+            let cdc_data = cdc::Class::CdcData;
+
+            let iface1 = interface::Descriptor {
+                bAlternativeSetting: 0,
+                bInterfaceNumber: 1,
+                bInterfaceClass: cdc_data.class().get(),
+                bInterfaceSubClass: cdc_data.subclass(),
+                bInterfaceProtocol: 0,
+                bNumEndpoints: 2,
+                iInterface: None,
+            };
+
+            bytes.extend_from_slice(&iface1.bytes());
+
+            let ep2out = endpoint::Descriptor {
+                bEndpointAddress: Endpoint {
+                    direction: Direction::Out,
+                    number: 2,
+                },
+                bInterval: 0,
+                ty: endpoint::Type::Bulk,
+                max_packet_size: PACKET_SIZE as u16,
+            };
+
+            bytes.extend_from_slice(&ep2out.bytes());
+
+            let ep2in = endpoint::Descriptor {
+                bEndpointAddress: Endpoint {
+                    direction: Direction::In,
+                    number: 2,
+                },
+                bInterval: 0,
+                ty: endpoint::Type::Bulk,
+                max_packet_size: PACKET_SIZE as u16,
+            };
+
+            bytes.extend_from_slice(&ep2in.bytes());
+        }
 
         let total_length = bytes.len();
         assert!(
-            total_length <= u16::max_value() as usize,
+            total_length <= usize::from(u16::max_value()),
             "configuration descriptor is too long"
         );
 

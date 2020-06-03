@@ -129,6 +129,7 @@ unsafe fn atomic1<T>(interrupt: Interrupt1, f: impl FnOnce() -> T) -> T {
     r
 }
 
+#[allow(dead_code)]
 fn pend1(interrupt: Interrupt1) {
     NVIC::borrow_unchecked(|nvic| nvic.ISPR1.write(1 << (interrupt as u8 - 32)));
 }

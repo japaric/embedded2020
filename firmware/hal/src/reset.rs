@@ -1,7 +1,9 @@
 use core::{mem, ptr};
 
 use cm::{DCB, DWT, NVIC};
-use pac::{CLOCK, P0, RTC0};
+use pac::{p0, CLOCK, P0, RTC0};
+
+use crate::led;
 
 #[no_mangle]
 unsafe extern "C" fn Reset() {
@@ -41,6 +43,25 @@ unsafe extern "C" fn Reset() {
         (ebss as usize - sbss as usize) / mem::size_of::<u32>(),
     );
 
+    // init .data
+    #[cfg(feature = "flash")]
+    {
+        extern "C" {
+            static mut _sdata: u32;
+            static mut _edata: u32;
+            static mut _sidata: u32;
+        }
+
+        let sdata = &mut _sdata as *mut u32;
+        let edata = &mut _edata as *mut u32;
+        let sidata = &_sidata as *const u32;
+        ptr::copy_nonoverlapping(
+            sidata,
+            sdata,
+            (edata as usize - sdata as usize) / mem::size_of::<u32>(),
+        );
+    }
+
     // NOTE this is a memory barrier -- .bss will be zeroed before the code that comes after this
     asm::disable_irq();
 
@@ -53,13 +74,10 @@ unsafe extern "C" fn Reset() {
     RTC0::seal();
 
     // configure I/O pins
-    P0::borrow_unchecked(|p0| {
-        // set outputs high (LEDs off)
-        p0.OUTSET.write(|w| w.PIN22(1).PIN23(1).PIN24(1));
-
-        // set pins as output
-        p0.DIRSET.write(|w| w.PIN22(1).PIN23(1).PIN24(1));
-    });
+    // set outputs high (LEDs off)
+    p0::OUTSET::address().write_volatile(led::RED | led::BLUE | led::GREEN);
+    // set pins as output
+    p0::DIRSET::address().write_volatile(led::RED | led::BLUE | led::GREEN);
 
     // run initializers
     extern "C" {

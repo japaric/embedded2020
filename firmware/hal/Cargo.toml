@@ -30,5 +30,6 @@ features = ["binfmt", "CLOCK", "FICR", "P0", "RTC0", "SPIM0"]
 path = "../pac"
 
 [features]
+flash = []
 radio = ["pac/RADIO"]
 usb = ["pac/POWER", "pac/USBD"]

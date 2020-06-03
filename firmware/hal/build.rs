@@ -7,11 +7,14 @@ use std::{
 
 fn main() -> Result<(), Box<dyn Error>> {
     let out_dir = &PathBuf::from(env::var("OUT_DIR")?);
+    let flash = env::var_os("CARGO_FEATURE_FLASH").is_some();
 
     descs(&out_dir)?;
 
     // put the linker script somewhere the linker can find it
-    fs::copy("link.x", out_dir.join("link.x"))?;
+    fs::copy("interrupts.x", out_dir.join("interrupts.x"))?;
+    let suffix = if flash { "flash" } else { "ram" };
+    fs::copy(format!("link-{}.x", suffix), out_dir.join("link.x"))?;
     println!("cargo:rustc-link-search={}", out_dir.display());
 
     Ok(())

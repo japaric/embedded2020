@@ -27,7 +27,7 @@ mod task {
 
     fn init() {
         RTC0::borrow_unchecked(|rtc| unsafe {
-            rtc.INTENSET.write(|w| w.COMPARE0(1).OVRFLW(1));
+            rtc.INTENSET.write(|w| w.COMPARE0(1));
             rtc.CC0.write(|w| w.COMPARE(super::STEP));
         });
 

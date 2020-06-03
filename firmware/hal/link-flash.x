@@ -29,8 +29,6 @@ SECTIONS
   .text :
   {
     *(.text .text.*);
-    /* `.vectors` alignment requirement given the size of the vector table */
-    . = ALIGN(256);
   } > FLASH
 
   .init :

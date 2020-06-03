@@ -42,10 +42,19 @@ pub fn cyccnt() -> u32 {
 
 /// Returns the device identifier
 pub fn deviceid() -> u64 {
+    u64::from(deviceid0()) | u64::from(deviceid1()) << 32
+}
+
+/// Returns the least-significant bits of the device identifier
+pub fn deviceid0() -> u32 {
     // NOTE(borrow_unchecked) read-only registers
-    FICR::borrow_unchecked(|ficr| {
-        u64::from(ficr.DEVICEID0.read().bits()) | u64::from(ficr.DEVICEID1.read().bits()) << 32
-    })
+    FICR::borrow_unchecked(|ficr| ficr.DEVICEID0.read().bits())
+}
+
+/// Returns the most-significant bits of the device identifier
+pub fn deviceid1() -> u32 {
+    // NOTE(borrow_unchecked) read-only registers
+    FICR::borrow_unchecked(|ficr| ficr.DEVICEID1.read().bits())
 }
 
 struct NotSync {

@@ -209,7 +209,9 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
                 core::num::NonZeroU8::new_unchecked(#CONFIG_VAL)
             };
             const MAX_PACKET_SIZE0: u8 = #max_packet_size0;
+            #[link_section = ".data.CONFIG_DESC"]
             static CONFIG_DESC: [u8; #cdl] = [#(#cdb,)*];
+            #[link_section = ".data.DEVICE_DESC"]
             static DEVICE_DESC: [u8; #ddl] = [#(#ddb,)*];
         )
         .to_string(),

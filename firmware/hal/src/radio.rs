@@ -510,7 +510,6 @@ pub struct Packet {
     buffer: Box<P>,
 }
 
-// TODO expose LQI
 impl Packet {
     /// How much data this packet can hold
     pub const CAPACITY: u8 = 127;

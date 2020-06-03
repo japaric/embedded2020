@@ -197,7 +197,16 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
         bytes
     }
 
+    let line_coding = acm::LineCoding {
+        bCharFormat: acm::bCharFormat::Stop1,
+        bDataBits: acm::bDataBits::_8,
+        bParityType: acm::bParityType::None,
+        dwDTERate: 63_000,
+    };
+
     let max_packet_size0 = PACKET_SIZE as u8;
+    let lcb = line_coding.bytes();
+    let lcl = lcb.len();
     let ddb = device_desc.bytes();
     let ddl = ddb.len();
     let cdb = full_config_desc();
@@ -209,10 +218,15 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
                 core::num::NonZeroU8::new_unchecked(#CONFIG_VAL)
             };
             const MAX_PACKET_SIZE0: u8 = #max_packet_size0;
+            #[allow(dead_code)]
             #[link_section = ".data.CONFIG_DESC"]
             static CONFIG_DESC: [u8; #cdl] = [#(#cdb,)*];
+            #[allow(dead_code)]
             #[link_section = ".data.DEVICE_DESC"]
             static DEVICE_DESC: [u8; #ddl] = [#(#ddb,)*];
+            #[allow(dead_code)]
+            #[link_section = ".data.LINE_CODING"]
+            static LINE_CODING: [u8; #lcl] = [#(#lcb,)*];
         )
         .to_string(),
     )?;

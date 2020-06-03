@@ -211,6 +211,10 @@ mod task {
                             }
                         }
 
+                        Ep0State::Read => {
+                            *EP0_STATE = Ep0State::Idle;
+                        }
+
                         Ep0State::Idle =>
                         {
                             #[cfg(debug_assertions)]
@@ -295,7 +299,7 @@ fn ep0setup(
         Request::Standard(req) => std_req(usb_state, ep_state, req)?,
 
         Request::Acm(req) => match *usb_state {
-            usb2::State::Configured { .. } => acm_req(ep2in_buf, req)?,
+            usb2::State::Configured { .. } => acm_req(ep2in_buf, ep_state, req)?,
 
             _ => return Err(()),
         },
@@ -461,19 +465,30 @@ fn std_req(
     Ok(())
 }
 
-fn acm_req(ep2in_buf: &mut [u8; 63], req: acm::Request) -> Result<(), ()> {
+fn acm_req(ep2in_buf: &mut [u8; 63], ep_state: &mut Ep0State, req: acm::Request) -> Result<(), ()> {
     match req {
         acm::Request::GetLineCoding { interface } => {
             semidap::info!("GET_LINE_CODING {}", interface);
 
-            return Err(());
+            semidap::info!("EP0IN: transferring {} bytes", acm::LineCoding::SIZE);
+
+            start_epin0(&LINE_CODING, ep_state);
         }
 
         acm::Request::SetLineCoding { interface } => {
             semidap::info!("SET_LINE_CODING {}", interface);
 
-            // FIXME we should probably read the host data
-            return Err(());
+            if *ep_state != Ep0State::Idle {
+                #[cfg(debug_assertions)]
+                unreachable()
+            }
+
+            *ep_state = Ep0State::Read;
+
+            semidap::info!("EP0OUT: accepting host data");
+
+            // accept data into the USBD peripheral
+            USBD::borrow_unchecked(|usbd| usbd.TASKS_EP0RCVOUT.write(|w| w.TASKS_EP0RCVOUT(1)));
         }
 
         acm::Request::SetControlLineState(cls) => {
@@ -485,8 +500,6 @@ fn acm_req(ep2in_buf: &mut [u8; 63], req: acm::Request) -> Result<(), ()> {
             );
 
             let state = EP2IN_STATE.load();
-
-            semidap::info!("state: {}", state);
 
             if cls.dte_present {
                 if state == Ep2InState::Off {
@@ -707,6 +720,7 @@ impl From<Packet> for crate::radio::Packet {
 #[derive(Clone, Copy, PartialEq)]
 enum Ep0State {
     Idle,
+    Read,
     Write { leftover: u16 },
 }
 

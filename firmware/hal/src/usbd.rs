@@ -292,7 +292,25 @@ fn ep0setup(
     })?;
 
     match req {
-        Request::Standard(StandardRequest::GetDescriptor { descriptor, length }) => {
+        Request::Standard(req) => std_req(usb_state, ep_state, req)?,
+
+        Request::Acm(req) => match *usb_state {
+            usb2::State::Configured { .. } => acm_req(ep2in_buf, req)?,
+
+            _ => return Err(()),
+        },
+    }
+
+    Ok(())
+}
+
+fn std_req(
+    usb_state: &mut usb2::State,
+    ep_state: &mut Ep0State,
+    req: StandardRequest,
+) -> Result<(), ()> {
+    match req {
+        StandardRequest::GetDescriptor { descriptor, length } => {
             semidap::info!("GET_DESCRIPTOR [{}] ..", length as u8);
 
             match descriptor {
@@ -330,15 +348,15 @@ fn ep0setup(
                 }
 
                 _ => {
-                    semidap::error!("unsupported GET_DESCRIPTOR {}", wvalue);
+                    semidap::error!("unsupported GET_DESCRIPTOR");
                     todo();
                 }
             }
         }
 
-        Request::Standard(StandardRequest::SetAddress {
+        StandardRequest::SetAddress {
             address: new_address,
-        }) => {
+        } => {
             // nothing to do here; the hardware will complete the transaction
             semidap::info!(
                 "SET_ADDRESS {}",
@@ -380,7 +398,7 @@ fn ep0setup(
             // nothing else to do here; the hardware will complete the transaction
         }
 
-        Request::Standard(StandardRequest::SetConfiguration { value }) => {
+        StandardRequest::SetConfiguration { value } => {
             semidap::info!(
                 "SET_CONFIGURATION {}",
                 value.map(|nz| nz.get()).unwrap_or(0)
@@ -437,20 +455,28 @@ fn ep0setup(
             ep0status()
         }
 
-        Request::Acm(acm::Request::GetLineCoding { interface }) => {
+        _ => return Err(()),
+    }
+
+    Ok(())
+}
+
+fn acm_req(ep2in_buf: &mut [u8; 63], req: acm::Request) -> Result<(), ()> {
+    match req {
+        acm::Request::GetLineCoding { interface } => {
             semidap::info!("GET_LINE_CODING {}", interface);
 
             return Err(());
         }
 
-        Request::Acm(acm::Request::SetLineCoding { interface }) => {
+        acm::Request::SetLineCoding { interface } => {
             semidap::info!("SET_LINE_CODING {}", interface);
 
             // FIXME we should probably read the host data
             return Err(());
         }
 
-        Request::Acm(acm::Request::SetControlLineState(cls)) => {
+        acm::Request::SetControlLineState(cls) => {
             semidap::info!(
                 "SET_CONTROL_LINE_STATE {} rts={} dte_present={}",
                 cls.interface,
@@ -489,11 +515,6 @@ fn ep0setup(
             // issue a status stage to acknowledge the request
             semidap::info!("ACM request acknowledged");
             ep0status()
-        }
-
-        _ => {
-            semidap::error!("EP0SETUP: request is not supported");
-            return Err(());
         }
     }
 

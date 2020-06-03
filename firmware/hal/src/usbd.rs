@@ -316,6 +316,11 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
                     }
                 }
 
+                GetDescriptor::String { .. } => {
+                    semidap::error!("requested string descriptor doesn't exist");
+                    return Err(())
+                }
+
                 _ => {
                     semidap::error!("unsupported GET_DESCRIPTOR {}", wvalue);
                     todo();
@@ -430,10 +435,16 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
             ep0status()
         }
 
+        Request::Acm(acm::Request::GetLineCoding { interface }) => {
+            semidap::info!("GET_LINE_CODING {}", interface);
+
+            return Err(());
+        }
+
         Request::Acm(acm::Request::SetLineCoding { interface }) => {
             semidap::info!("SET_LINE_CODING {}", interface);
 
-            // FIXME read host data
+            // FIXME we should probably read the host data
             return Err(());
         }
 

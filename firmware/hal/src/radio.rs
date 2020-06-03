@@ -48,6 +48,9 @@ mod task {
             const CH20: u8 = 50; // 2_450 MHz
             radio.FREQUENCY.write(|w| w.FREQUENCY(CH20));
 
+            // set TX power to its maximum value
+            radio.TXPOWER.write(|w| w.TXPOWER(8));
+
             radio.PCNF0.write(|w| {
                 // length = 8 bits (but highest bit is reserved and must be 0)
                 w.LFLEN(8)

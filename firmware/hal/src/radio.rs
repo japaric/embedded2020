@@ -1,7 +1,5 @@
 //! IEEE 802.15.4 radio
 
-#[cfg(feature = "usb")]
-use core::convert::TryFrom;
 use core::{
     cmp, mem, ops, ptr, slice,
     sync::atomic::{AtomicBool, Ordering},
@@ -554,7 +552,13 @@ impl Packet {
         }
     }
 
+    /// Returns the LQI (Link Quality Indicator) of the received packet
+    pub fn lqi(&self) -> u8 {
+        unsafe { *self.data_ptr().add(self.len().into()) }
+    }
+
     #[cfg(feature = "usb")]
+    #[cfg(TODO)]
     pub(crate) fn from_parts(buffer: Box<P>, len: u8) -> Self {
         let mut packet = Packet { buffer };
         unsafe {
@@ -598,6 +602,7 @@ impl ops::DerefMut for Packet {
     }
 }
 
+#[cfg(TODO)]
 #[cfg(feature = "usb")]
 impl crate::usbd::Packet {
     pub fn try_from(packet: Packet) -> Result<crate::usbd::Packet, Packet> {

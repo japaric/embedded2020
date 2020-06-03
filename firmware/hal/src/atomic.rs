@@ -7,7 +7,7 @@ macro_rules! derive {
     ($e:ident) => {
         unsafe impl crate::atomic::Enum for $e {
             unsafe fn from_u8(val: u8) -> Self {
-                mem::transmute(val)
+                core::mem::transmute(val)
             }
 
             fn to_u8(self) -> u8 {

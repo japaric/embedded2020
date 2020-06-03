@@ -9,6 +9,7 @@ members = [
   "pac",
   "panic-abort",
   "pool",
+  "ring",
   "semidap",
   "tasks",
   "tests",

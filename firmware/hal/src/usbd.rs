@@ -1,53 +1,47 @@
 //! USB device
 
-use core::{
-    cmp, mem, ops, ptr, slice,
-    sync::atomic::{AtomicBool, AtomicU8, Ordering},
-    task::Poll,
-};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use binfmt::derive::binDebug;
 use pac::{
     usbd::{epdatastatus, epinen, epouten, eventcause},
     POWER, USBD,
 };
-use pool::Box;
 use usb2::{cdc::acm, GetDescriptor, Request, StandardRequest};
 
-use crate::{atomic::Atomic, mem::P, Interrupt1, NotSendOrSync};
+use crate::{atomic::Atomic, Interrupt1, NotSendOrSync};
 
 include!(concat!(env!("OUT_DIR"), "/descs.rs"));
 
-static EPIN1_BUSY: AtomicBool = AtomicBool::new(false);
-static EPOUT1_STATE: Atomic<EpOut1State> = Atomic::new();
-static EPOUT1_SIZE: AtomicU8 = AtomicU8::new(0);
+#[derive(Clone, Copy, PartialEq, binDebug)]
+#[repr(u8)]
+enum Ep2InState {
+    Off = 0,
+    Idle,
+    InUse,
+}
+
+derive!(Ep2InState);
+
+static EP2IN_STATE: Atomic<Ep2InState> = Atomic::new();
+
+#[repr(align(4))]
+struct Align4<T>(pub T);
 
 #[tasks::declare]
 mod task {
-    use core::mem::MaybeUninit;
-
     use pac::{CLOCK, USBD};
-    use pool::Node;
 
-    use crate::{clock, errata, mem::P, Interrupt0, Interrupt1};
+    use crate::{clock, errata, Interrupt0, Interrupt1};
 
-    use super::{Ep0State, PowerEvent, PowerState, UsbdEvent};
+    use super::{
+        Align4, Ep0State, Ep2InState, PowerEvent, PowerState, UsbdEvent, EP2IN_STATE, TX_BUF,
+    };
 
     static mut PCSTATE: PowerState = PowerState::Off;
 
     // NOTE(unsafe) all interrupts are still globally masked (`CPSID I`)
     fn init() {
-        #[uninit(unsafe)]
-        static mut PACKETS: [MaybeUninit<Node<[u8; P::SIZE]>>; 3] = [
-            MaybeUninit::uninit(),
-            MaybeUninit::uninit(),
-            MaybeUninit::uninit(),
-        ];
-
-        for packet in PACKETS {
-            P::manage(packet)
-        }
-
         // reserve peripherals for HAL use
         pac::POWER::seal();
         pac::USBD::seal();
@@ -60,13 +54,11 @@ mod task {
         });
         pac::USBD::borrow_unchecked(|usbd| unsafe {
             usbd.INTENSET.write(|w| {
-                w.ENDEPIN1(1)
-                    .EP0DATADONE(1)
+                w.EP0DATADONE(1)
                     .EP0SETUP(1)
                     .EPDATA(1)
                     .USBEVENT(1)
                     .USBRESET(1)
-                    .ENDEPOUT1(1)
             });
         });
 
@@ -131,6 +123,8 @@ mod task {
     fn USBD() -> Option<()> {
         static mut USB_STATE: usb2::State = usb2::State::Default;
         static mut EP0_STATE: Ep0State = Ep0State::Idle;
+        #[uninit(unsafe)]
+        static mut EP2IN_BUF: Align4<[u8; 63]> = Align4([0; 63]);
 
         semidap::trace!("USBD");
 
@@ -200,7 +194,7 @@ mod task {
                         super::unreachable()
                     }
 
-                    if super::ep0setup(USB_STATE, EP0_STATE).is_err() {
+                    if super::ep0setup(USB_STATE, EP0_STATE, &mut EP2IN_BUF.0).is_err() {
                         super::EP0STALL()
                     }
                 }
@@ -225,38 +219,48 @@ mod task {
                     }
                 }
 
-                // TODO remove
-                UsbdEvent::ENDEPIN2 => {
-                    // nothing to do here
-                }
-
-                UsbdEvent::ENDEPOUT2 => super::todo(),
-
-                // TODO remove?
                 UsbdEvent::EPDATA => {
                     let status = super::EPDATASTATUS();
-                    semidap::info!("{}", status);
                     if status.EPIN2() != 0 {
-                        use core::sync::atomic::{AtomicU8, Ordering};
+                        crate::dma_end();
+                        if EP2IN_STATE.load() != Ep2InState::InUse {
+                            #[cfg(debug_assertions)]
+                            super::unreachable()
+                        }
 
-                        static X: AtomicU8 = AtomicU8::new(0);
+                        let n = TX_BUF.read(&mut EP2IN_BUF.0) as u8;
 
-                        let x = X.load(Ordering::Relaxed);
-                        if x < 3 {
+                        if n != 0 {
+                            semidap::info!("EP2IN: transferring {} bytes", n);
+
+                            // enqueue another transfer
                             USBD::borrow_unchecked(|usbd| {
-                                usbd.EPIN2_MAXCNT.write(|w| w.MAXCNT(0));
+                                usbd.EPIN2_PTR
+                                    .write(|w| w.PTR(EP2IN_BUF.0.as_mut_ptr() as u32));
+                                usbd.EPIN2_MAXCNT.write(|w| w.MAXCNT(n));
+                                crate::dma_start();
                                 usbd.TASKS_STARTEPIN2.write(|w| w.TASKS_STARTEPIN(1));
                             });
-                            X.store(x + 1, Ordering::Relaxed);
+                        // remain in the 'InUse' state
+                        } else {
+                            EP2IN_STATE.store(Ep2InState::Idle);
                         }
                     }
-                    if status.EPOUT2() != 0 {
-                        USBD::borrow_unchecked(|usbd| {
-                            semidap::info!("{}", usbd.SIZE_EPOUT2.read());
-                            // fetch next packet
-                            usbd.SIZE_EPOUT2.write(|w| w.SIZE(0));
-                        });
-                    }
+                }
+
+                UsbdEvent::TxWrite => {
+                    let n = TX_BUF.read(&mut EP2IN_BUF.0) as u8;
+
+                    semidap::info!("EP2IN: transferring {} bytes", n);
+
+                    USBD::borrow_unchecked(|usbd| {
+                        usbd.EPIN2_PTR
+                            .write(|w| w.PTR(EP2IN_BUF.0.as_mut_ptr() as u32));
+                        usbd.EPIN2_MAXCNT.write(|w| w.MAXCNT(n));
+                        crate::dma_start();
+                        usbd.TASKS_STARTEPIN2.write(|w| w.TASKS_STARTEPIN(1));
+                    });
+                    EP2IN_STATE.store(Ep2InState::InUse);
                 }
             },
         }
@@ -265,7 +269,11 @@ mod task {
     }
 }
 
-fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), ()> {
+fn ep0setup(
+    usb_state: &mut usb2::State,
+    ep_state: &mut Ep0State,
+    ep2in_buf: &mut [u8; 63],
+) -> Result<(), ()> {
     let bmrequesttype = BMREQUESTTYPE();
     let brequest = BREQUEST();
     let wvalue = WVALUE();
@@ -318,7 +326,7 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
 
                 GetDescriptor::String { .. } => {
                     semidap::error!("requested string descriptor doesn't exist");
-                    return Err(())
+                    return Err(());
                 }
 
                 _ => {
@@ -392,15 +400,9 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
 
                             USBD::borrow_unchecked(|usbd| {
                                 usbd.EPINEN.write(|w| w.IN0(1).IN1(1).IN2(1));
-                                usbd.EPOUTEN.write(|w| w.OUT0(1).OUT2(1));
-                                usbd.SIZE_EPOUT2.write(|w| w.SIZE(0));
-
-                                // FIXME remove
-                                #[repr(align(4))]
-                                struct Align4([u8; 6]);
-                                static S: Align4 = Align4([b'H', b'e', b'l', b'l', b'o', b'\n']);
-                                usbd.EPIN2_PTR.write(|w| w.PTR(S.0.as_ptr() as u32));
-                                usbd.EPIN2_MAXCNT.write(|w| w.MAXCNT(S.0.len() as u8));
+                                // TODO(Rx support) enable the EP2OUT endpoint
+                                // usbd.EPOUTEN.write(|w| w.OUT0(1).OUT2(1));
+                                // usbd.SIZE_EPOUT2.write(|w| w.SIZE(0));
                             })
                         } else {
                             semidap::error!("requested configuration is not supported");
@@ -456,12 +458,32 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
                 cls.dte_present as u8
             );
 
-            static ONCE: AtomicBool = AtomicBool::new(false);
-            if !ONCE.load(Ordering::Relaxed) {
-                USBD::borrow_unchecked(|usbd| {
-                    usbd.TASKS_STARTEPIN2.write(|w| w.TASKS_STARTEPIN(1));
-                });
-                ONCE.store(true, Ordering::Relaxed);
+            let state = EP2IN_STATE.load();
+
+            semidap::info!("state: {}", state);
+
+            if cls.dte_present {
+                if state == Ep2InState::Off {
+                    let n = TX_BUF.read(ep2in_buf) as u8;
+                    if n != 0 {
+                        semidap::info!("EP2IN: transferring {} bytes", n);
+                        USBD::borrow_unchecked(|usbd| {
+                            usbd.EPIN2_PTR
+                                .write(|w| w.PTR(ep2in_buf.as_mut_ptr() as u32));
+                            usbd.EPIN2_MAXCNT.write(|w| w.MAXCNT(n));
+                            crate::dma_start();
+                            usbd.TASKS_STARTEPIN2.write(|w| w.TASKS_STARTEPIN(1));
+                        });
+                        EP2IN_STATE.store(Ep2InState::InUse);
+                    } else {
+                        EP2IN_STATE.store(Ep2InState::Idle);
+                    }
+                } else {
+                    // ignore
+                }
+            } else {
+                // FIXME should cancel on-going transfers
+                EP2IN_STATE.store(Ep2InState::Off);
             }
 
             // issue a status stage to acknowledge the request
@@ -532,18 +554,18 @@ fn continue_epin0(leftover: &mut u16) {
     })
 }
 
-/// Bulk IN endpoint 1
-pub struct BulkIn {
+/// CDC ACM transmit (device to host) endpoint
+pub struct Tx {
     _not_send_or_sync: NotSendOrSync,
 }
 
-/// Bulk OUT endpoint 1
-pub struct BulkOut {
+/// CDC ACM receive (host to device) endpoint
+pub struct Rx {
     _not_send_or_sync: NotSendOrSync,
 }
 
 /// Claims the USB interface
-pub fn claim() -> (BulkIn, BulkOut) {
+pub fn claim() -> (Tx, Rx) {
     static ONCE: AtomicBool = AtomicBool::new(false);
 
     if ONCE
@@ -551,10 +573,10 @@ pub fn claim() -> (BulkIn, BulkOut) {
         .is_ok()
     {
         (
-            BulkIn {
+            Tx {
                 _not_send_or_sync: NotSendOrSync::new(),
             },
-            BulkOut {
+            Rx {
                 _not_send_or_sync: NotSendOrSync::new(),
             },
         )
@@ -563,127 +585,31 @@ pub fn claim() -> (BulkIn, BulkOut) {
     }
 }
 
-impl BulkOut {
-    /// Reads a packet from the host
-    pub async fn read(&mut self) -> Packet {
-        // wait until the endpoint has been enabled
-        crate::poll_fn(|| {
-            if EPOUTEN().OUT1() != 0 {
-                Poll::Ready(())
-            } else {
-                Poll::Pending
-            }
-        })
-        .await;
+static TX_BUF: ring::Buffer = unsafe {
+    ring::Buffer::new({
+        #[link_section = ".uninit.TX_BUF"]
+        static TX_BUF: [u8; 256] = [0; 256];
+        &TX_BUF
+    })
+};
 
-        let mut packet = Packet::new().await;
-
-        let mut needs_len = true;
-        let epstart = || {
-            USBD::borrow_unchecked(|usbd| {
-                const NO_DATA: u8 = u8::max_value();
-                let mut size = NO_DATA;
-                let state = EPOUT1_STATE.load();
-                match state {
-                    EpOut1State::Idle | EpOut1State::DataReady => {
-                        usbd.EPOUT1_PTR
-                            .write(|w| w.PTR(packet.data_ptr_mut() as u32));
-
-                        if state == EpOut1State::DataReady {
-                            size = SIZE_EPOUT1();
-                            EPOUT1_MAXCNT(size);
-                            packet.set_len(size);
-                            needs_len = false;
-                            EPOUT1_STATE.store(EpOut1State::TransferInProgress);
-                        } else {
-                            semidap::info!("EPOUT1: buffer ready");
-                            EPOUT1_STATE.store(EpOut1State::BufferReady);
-                        }
-                    }
-
-                    EpOut1State::BufferReady | EpOut1State::TransferInProgress =>
-                    {
-                        #[cfg(debug_assertions)]
-                        unreachable()
-                    }
-                }
-
-                if size != NO_DATA {
-                    // NOTE the following operation handles the buffer to the `USBD` task
-                    crate::dma_start();
-                    // start DMA transfer
-                    STARTEPOUT1();
-                    semidap::info!("EPOUT1: transfer started ({}B)", size);
-                }
-            })
-        };
-        unsafe { crate::atomic1(Interrupt1::USBD, epstart) }
-
-        crate::poll_fn(|| {
-            match EPOUT1_STATE.load() {
-                EpOut1State::Idle | EpOut1State::DataReady => {
-                    // NOTE the `USBD` task has handled the buffer back to us
-                    crate::dma_end();
-                    Poll::Ready(())
-                }
-
-                EpOut1State::BufferReady | EpOut1State::TransferInProgress => Poll::Pending,
-            }
-        })
-        .await;
-
-        if needs_len {
-            packet.set_len(EPOUT1_SIZE.load(Ordering::Relaxed));
-        }
-
-        packet
-    }
-}
-
-impl BulkIn {
-    /// Sends a packet to the host
-    pub async fn write(&mut self, packet: Packet) {
-        // wait until the endpoint has been enabled
-        crate::poll_fn(|| {
-            if EPINEN().IN1() != 0 {
-                Poll::Ready(())
-            } else {
-                Poll::Pending
-            }
-        })
-        .await;
-
-        crate::poll_fn(|| {
-            if EPIN1_BUSY.load(Ordering::Relaxed) {
-                Poll::Pending
-            } else {
-                Poll::Ready(())
-            }
-        })
-        .await;
-
-        USBD::borrow_unchecked(|usbd| {
-            let len = packet.len();
-
-            usbd.EPIN1_PTR.write(|w| w.PTR(packet.data_ptr() as u32));
-            mem::forget(packet);
-            usbd.EPIN1_MAXCNT.write(|w| w.MAXCNT(len));
-            EPIN1_BUSY.store(true, Ordering::Relaxed);
-
-            semidap::info!("EPIN1: transfer started ({}B)", len);
-
-            crate::dma_start();
-            usbd.TASKS_STARTEPIN1.write(|w| w.TASKS_STARTEPIN(1));
-        });
+impl Tx {
+    /// Sends data to the host
+    pub fn write(&mut self, bytes: &[u8]) {
+        // FIXME this should use `write_all`
+        TX_BUF.write(bytes);
+        crate::pend1(Interrupt1::USBD);
     }
 }
 
 /// USB packet
+#[cfg(TODO)]
 pub struct Packet {
     buffer: Box<P>,
     len: u8,
 }
 
+#[cfg(TODO)]
 impl Packet {
     /// How much data this packet can hold
     pub const CAPACITY: u8 = 64;
@@ -733,6 +659,7 @@ impl Packet {
     }
 }
 
+#[cfg(TODO)]
 impl ops::Deref for Packet {
     type Target = [u8];
 
@@ -741,12 +668,14 @@ impl ops::Deref for Packet {
     }
 }
 
+#[cfg(TODO)]
 impl ops::DerefMut for Packet {
     fn deref_mut(&mut self) -> &mut [u8] {
         unsafe { slice::from_raw_parts_mut(self.data_ptr_mut(), self.len.into()) }
     }
 }
 
+#[cfg(TODO)]
 #[cfg(feature = "radio")]
 impl From<Packet> for crate::radio::Packet {
     fn from(packet: Packet) -> crate::radio::Packet {
@@ -759,18 +688,6 @@ enum Ep0State {
     Idle,
     Write { leftover: u16 },
 }
-
-#[allow(dead_code)]
-#[derive(Clone, Copy, PartialEq)]
-#[repr(u8)]
-enum EpOut1State {
-    Idle = 0,
-    DataReady = 1,
-    BufferReady = 2,
-    TransferInProgress = 3,
-}
-
-derive!(EpOut1State);
 
 #[derive(Clone, Copy)]
 enum PowerState {
@@ -811,13 +728,12 @@ impl PowerEvent {
 
 #[derive(Clone, Copy, binDebug, PartialEq)]
 enum UsbdEvent {
-    ENDEPIN2,
-    ENDEPOUT2,
     EP0SETUP,
     EP0DATADONE,
     EPDATA,
     USBEVENT,
     USBRESET,
+    TxWrite,
 }
 
 impl UsbdEvent {
@@ -843,26 +759,16 @@ impl UsbdEvent {
                 return Some(UsbdEvent::EP0SETUP);
             }
 
-            if usbd.EVENTS_ENDEPIN2.read().bits() != 0 {
-                usbd.EVENTS_ENDEPIN2.zero();
-                return Some(UsbdEvent::ENDEPIN2);
-            }
-
-            if usbd.EVENTS_ENDEPOUT2.read().bits() != 0 {
-                usbd.EVENTS_ENDEPOUT2.zero();
-                return Some(UsbdEvent::ENDEPOUT2);
-            }
-
             if usbd.EVENTS_EPDATA.read().bits() != 0 {
                 usbd.EVENTS_EPDATA.zero();
                 return Some(UsbdEvent::EPDATA);
             }
 
-            if cfg!(debug_assertions) {
-                unreachable()
-            } else {
-                None
+            if EP2IN_STATE.load() == Ep2InState::Idle && TX_BUF.bytes_to_read() != 0 {
+                return Some(UsbdEvent::TxWrite);
             }
+
+            None
         })
     }
 }
@@ -927,11 +833,13 @@ fn disconnect() {
     semidap::info!("detached from the bus");
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 fn SIZE_EPOUT1() -> u8 {
     USBD::borrow_unchecked(|usbd| usbd.SIZE_EPOUT1.read().bits())
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 fn EPINEN() -> epinen::R {
     USBD::borrow_unchecked(|usbd| usbd.EPINEN.read())
@@ -943,16 +851,19 @@ fn EPIN1_PTR() -> u32 {
     USBD::borrow_unchecked(|usbd| usbd.EPIN1_PTR.read().bits())
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 fn EPOUTEN() -> epouten::R {
     USBD::borrow_unchecked(|usbd| usbd.EPOUTEN.read())
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 fn EPOUT1_MAXCNT(cnt: u8) {
     USBD::borrow_unchecked(|usbd| usbd.EPOUT1_MAXCNT.write(|w| w.MAXCNT(cnt)))
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 fn STARTEPOUT1() {
     USBD::borrow_unchecked(|usbd| usbd.TASKS_STARTEPOUT1.write(|w| w.TASKS_STARTEPOUT(1)));

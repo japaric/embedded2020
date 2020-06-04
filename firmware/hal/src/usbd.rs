@@ -59,6 +59,7 @@ mod task {
                     .EPDATA(1)
                     .USBEVENT(1)
                     .USBRESET(1)
+                    .ENDEPOUT0(1)
             });
         });
 
@@ -211,9 +212,8 @@ mod task {
                             }
                         }
 
-                        Ep0State::Read => {
-                            *EP0_STATE = Ep0State::Idle;
-                        }
+                        // nothing to do here; wait for ENDEPOUT0
+                        Ep0State::Read => {}
 
                         Ep0State::Idle =>
                         {
@@ -250,6 +250,14 @@ mod task {
                             EP2IN_STATE.store(Ep2InState::Idle);
                         }
                     }
+                }
+
+                UsbdEvent::ENDEPOUT0 => {
+                    crate::dma_end();
+                    unsafe {
+                        semidap::info!("new LINE_CODING: {}", super::LINE_CODING[..]);
+                    }
+                    *EP0_STATE = Ep0State::Idle;
                 }
 
                 UsbdEvent::TxWrite => {
@@ -472,7 +480,7 @@ fn acm_req(ep2in_buf: &mut [u8; 63], ep_state: &mut Ep0State, req: acm::Request)
 
             semidap::info!("EP0IN: transferring {} bytes", acm::LineCoding::SIZE);
 
-            start_epin0(&LINE_CODING, ep_state);
+            start_epin0(unsafe { &LINE_CODING }, ep_state);
         }
 
         acm::Request::SetLineCoding { interface } => {
@@ -487,8 +495,18 @@ fn acm_req(ep2in_buf: &mut [u8; 63], ep_state: &mut Ep0State, req: acm::Request)
 
             semidap::info!("EP0OUT: accepting host data");
 
-            // accept data into the USBD peripheral
-            USBD::borrow_unchecked(|usbd| usbd.TASKS_EP0RCVOUT.write(|w| w.TASKS_EP0RCVOUT(1)));
+            // accept data into `LINE_CODING` buffer
+            USBD::borrow_unchecked(|usbd| {
+                unsafe {
+                    usbd.EPOUT0_PTR
+                        .write(|w| w.PTR(LINE_CODING.as_mut_ptr() as u32));
+                    usbd.EPOUT0_MAXCNT
+                        .write(|w| w.MAXCNT(LINE_CODING.len() as u8));
+                }
+                usbd.SHORTS.rmw(|_, w| w.EP0DATADONE_STARTEPOUT0(1));
+                crate::dma_start();
+                usbd.TASKS_EP0RCVOUT.write(|w| w.TASKS_EP0RCVOUT(1))
+            });
         }
 
         acm::Request::SetControlLineState(cls) => {
@@ -763,12 +781,13 @@ impl PowerEvent {
 
 #[derive(Clone, Copy, binDebug, PartialEq)]
 enum UsbdEvent {
-    EP0SETUP,
+    ENDEPOUT0,
     EP0DATADONE,
+    EP0SETUP,
     EPDATA,
+    TxWrite,
     USBEVENT,
     USBRESET,
-    TxWrite,
 }
 
 impl UsbdEvent {
@@ -797,6 +816,11 @@ impl UsbdEvent {
             if usbd.EVENTS_EPDATA.read().bits() != 0 {
                 usbd.EVENTS_EPDATA.zero();
                 return Some(UsbdEvent::EPDATA);
+            }
+
+            if usbd.EVENTS_ENDEPOUT0.read().bits() != 0 {
+                usbd.EVENTS_ENDEPOUT0.zero();
+                return Some(UsbdEvent::ENDEPOUT0);
             }
 
             if EP2IN_STATE.load() == Ep2InState::Idle && TX_BUF.bytes_to_read() != 0 {

@@ -201,7 +201,7 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
         bCharFormat: acm::bCharFormat::Stop1,
         bDataBits: acm::bDataBits::_8,
         bParityType: acm::bParityType::None,
-        dwDTERate: 63_000,
+        dwDTERate: 9_600,
     };
 
     let max_packet_size0 = PACKET_SIZE as u8;
@@ -225,8 +225,7 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
             #[link_section = ".data.DEVICE_DESC"]
             static DEVICE_DESC: [u8; #ddl] = [#(#ddb,)*];
             #[allow(dead_code)]
-            #[link_section = ".data.LINE_CODING"]
-            static LINE_CODING: [u8; #lcl] = [#(#lcb,)*];
+            static mut LINE_CODING: [u8; #lcl] = [#(#lcb,)*];
         )
         .to_string(),
     )?;

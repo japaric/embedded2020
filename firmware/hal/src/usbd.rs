@@ -250,6 +250,14 @@ mod task {
                             EP2IN_STATE.store(Ep2InState::Idle);
                         }
                     }
+                    if status.EPOUT2() != 0 {
+                        // discard received data
+                        USBD::borrow_unchecked(|usbd| {
+                            let n = usbd.SIZE_EPOUT2.read().SIZE();
+                            semidap::info!("EP2OUT: received {} bytes (discarded)", n);
+                            usbd.SIZE_EPOUT2.write(|w| w.SIZE(0))
+                        });
+                    }
                 }
 
                 UsbdEvent::ENDEPOUT0 => {
@@ -309,7 +317,10 @@ fn ep0setup(
         Request::Acm(req) => match *usb_state {
             usb2::State::Configured { .. } => acm_req(ep2in_buf, ep_state, req)?,
 
-            _ => return Err(()),
+            _ => {
+                semidap::error!("received ACM request but device is not yet Configured");
+                return Err(());
+            }
         },
     }
 
@@ -430,9 +441,9 @@ fn std_req(
 
                             USBD::borrow_unchecked(|usbd| {
                                 usbd.EPINEN.write(|w| w.IN0(1).IN1(1).IN2(1));
-                                // TODO(Rx support) enable the EP2OUT endpoint
+                                // TODO? Rx support -- host sends back junk when Tx is used though
                                 // usbd.EPOUTEN.write(|w| w.OUT0(1).OUT2(1));
-                                // usbd.SIZE_EPOUT2.write(|w| w.SIZE(0));
+                                usbd.SIZE_EPOUT2.write(|w| w.SIZE(0));
                             })
                         } else {
                             semidap::error!("requested configuration is not supported");
@@ -467,7 +478,10 @@ fn std_req(
             ep0status()
         }
 
-        _ => return Err(()),
+        _ => {
+            semidap::error!("unexpected standard request");
+            return Err(());
+        }
     }
 
     Ok(())

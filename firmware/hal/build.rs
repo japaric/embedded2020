@@ -104,8 +104,8 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
 
             let call = call::Descriptor {
                 bmCapabilities: call::Capabilities {
-                    call_management: false,
-                    data_class: false,
+                    call_management: true,
+                    data_class: true,
                 },
                 bDataInterface: 1,
             };
@@ -115,9 +115,9 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
             let acm = acm::Descriptor {
                 bmCapabilities: acm::Capabilities {
                     comm_features: false,
-                    line_serial: false, // ?
+                    line_serial: true,
                     network_connection: false,
-                    send_break: false, // ?
+                    send_break: false,
                 },
             };
 

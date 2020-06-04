@@ -208,13 +208,6 @@ impl Event {
                 }
             }
 
-            if radio.EVENTS_PHYEND.read().bits() != 0 {
-                radio.EVENTS_PHYEND.zero();
-                if radio.INTENSET.read().PHYEND() != 0 {
-                    return Some(Event::PHYEND);
-                }
-            }
-
             if radio.EVENTS_READY.read().bits() != 0 {
                 radio.EVENTS_READY.zero();
                 return Some(Event::READY);
@@ -233,6 +226,13 @@ impl Event {
             if radio.EVENTS_END.read().bits() != 0 {
                 radio.EVENTS_END.zero();
                 return Some(Event::END);
+            }
+
+            if radio.EVENTS_PHYEND.read().bits() != 0 {
+                radio.EVENTS_PHYEND.zero();
+                if radio.INTENSET.read().PHYEND() != 0 {
+                    return Some(Event::PHYEND);
+                }
             }
 
             if cfg!(debug_assertions) {
@@ -437,6 +437,11 @@ impl Tx {
                             semidap::info!("TX: locked the RADIO");
 
                             SET_PACKETPTR(packetptr);
+
+                            // clear any lingering event set by the `Rx` abstraction
+                            RADIO::borrow_unchecked(|radio| {
+                                radio.EVENTS_PHYEND.zero();
+                            });
 
                             INTENSET_PHYEND();
                             INTENCLR_FRAMESTART();

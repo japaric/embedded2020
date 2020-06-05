@@ -201,10 +201,11 @@ mod task {
                 }
 
                 UsbdEvent::EP0DATADONE => {
-                    semidap::info!("EPIN0: data transmitted");
 
                     match EP0_STATE {
                         Ep0State::Write { leftover } => {
+                            semidap::info!("EPIN0: data transmitted");
+
                             if *leftover != 0 {
                                 super::continue_epin0(leftover);
                             } else {
@@ -213,7 +214,9 @@ mod task {
                         }
 
                         // nothing to do here; wait for ENDEPOUT0
-                        Ep0State::Read => {}
+                        Ep0State::Read => {
+                            semidap::info!("EPIN0: data received");
+                        }
 
                         Ep0State::Idle =>
                         {
@@ -262,9 +265,6 @@ mod task {
 
                 UsbdEvent::ENDEPOUT0 => {
                     crate::dma_end();
-                    unsafe {
-                        semidap::info!("new LINE_CODING: {}", super::LINE_CODING[..]);
-                    }
                     *EP0_STATE = Ep0State::Idle;
                 }
 
@@ -491,8 +491,6 @@ fn acm_req(ep2in_buf: &mut [u8; 63], ep_state: &mut Ep0State, req: acm::Request)
     match req {
         acm::Request::GetLineCoding { interface } => {
             semidap::info!("GET_LINE_CODING {}", interface);
-
-            semidap::info!("EP0IN: transferring {} bytes", acm::LineCoding::SIZE);
 
             start_epin0(unsafe { &LINE_CODING }, ep_state);
         }

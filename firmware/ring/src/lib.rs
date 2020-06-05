@@ -53,18 +53,33 @@ impl Buffer {
         }
 
         let cursor = read % N;
-        let consumed = cmp::min(buf.len(), available as usize) as u16;
+        let len = cmp::min(buf.len(), available as usize) as u16;
         unsafe {
-            ptr::copy_nonoverlapping(
-                self.buffer.add(cursor.into()),
-                buf.as_mut_ptr(),
-                consumed.into(),
-            );
+            if cursor + len > N {
+                // split memcpy
+                let pivot = N - cursor;
+                ptr::copy_nonoverlapping(
+                    self.buffer.add(cursor.into()),
+                    buf.as_mut_ptr(),
+                    pivot.into(),
+                );
+                ptr::copy_nonoverlapping(
+                    self.buffer,
+                    buf.as_mut_ptr().add(pivot.into()),
+                    (len - pivot).into(),
+                );
+            } else {
+                // single memcpy
+                ptr::copy_nonoverlapping(
+                    self.buffer.add(cursor.into()),
+                    buf.as_mut_ptr(),
+                    len.into(),
+                );
+            }
         }
         atomic::compiler_fence(Ordering::Release);
-        self.read
-            .store(read.wrapping_add(consumed), Ordering::Relaxed);
-        consumed.into()
+        self.read.store(read.wrapping_add(len), Ordering::Relaxed);
+        len.into()
     }
 
     #[cfg(TODO)]

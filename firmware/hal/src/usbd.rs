@@ -1,6 +1,9 @@
 //! USB device
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    cmp,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use binfmt::derive::binDebug;
 use pac::{
@@ -25,18 +28,13 @@ derive!(Ep2InState);
 
 static EP2IN_STATE: Atomic<Ep2InState> = Atomic::new();
 
-#[repr(align(4))]
-struct Align4<T>(pub T);
-
 #[tasks::declare]
 mod task {
     use pac::{CLOCK, USBD};
 
-    use crate::{clock, errata, Interrupt0, Interrupt1};
+    use crate::{clock, errata, util::Align4, Interrupt0, Interrupt1};
 
-    use super::{
-        Align4, Ep0State, Ep2InState, PowerEvent, PowerState, UsbdEvent, EP2IN_STATE, TX_BUF,
-    };
+    use super::{Ep0State, Ep2InState, PowerEvent, PowerState, UsbdEvent, EP2IN_STATE, TX_BUF};
 
     static mut PCSTATE: PowerState = PowerState::Off;
 
@@ -201,7 +199,6 @@ mod task {
                 }
 
                 UsbdEvent::EP0DATADONE => {
-
                     match EP0_STATE {
                         Ep0State::Write { leftover } => {
                             semidap::info!("EPIN0: data transmitted");
@@ -235,23 +232,10 @@ mod task {
                             super::unreachable()
                         }
 
-                        let n = TX_BUF.read(&mut EP2IN_BUF.0) as u8;
-
-                        if n != 0 {
-                            semidap::info!("EP2IN: transferring {} bytes", n);
-
-                            // enqueue another transfer
-                            USBD::borrow_unchecked(|usbd| {
-                                usbd.EPIN2_PTR
-                                    .write(|w| w.PTR(EP2IN_BUF.0.as_mut_ptr() as u32));
-                                usbd.EPIN2_MAXCNT.write(|w| w.MAXCNT(n));
-                                crate::dma_start();
-                                usbd.TASKS_STARTEPIN2.write(|w| w.TASKS_STARTEPIN(1));
-                            });
-                        // remain in the 'InUse' state
-                        } else {
-                            EP2IN_STATE.store(Ep2InState::Idle);
-                        }
+                        unsafe { super::start_epin2(&mut EP2IN_BUF.0) }
+                    }
+                    if status.EPIN1() != 0 {
+                        semidap::info!("EP1IN: data sent");
                     }
                     if status.EPOUT2() != 0 {
                         // discard received data
@@ -444,6 +428,9 @@ fn std_req(
                                 // TODO? Rx support -- host sends back junk when Tx is used though
                                 // usbd.EPOUTEN.write(|w| w.OUT0(1).OUT2(1));
                                 usbd.SIZE_EPOUT2.write(|w| w.SIZE(0));
+
+                                // send a SerialState notification
+                                start_epin1(&SERIAL_STATE.0);
                             })
                         } else {
                             semidap::error!("requested configuration is not supported");
@@ -523,30 +510,17 @@ fn acm_req(ep2in_buf: &mut [u8; 63], ep_state: &mut Ep0State, req: acm::Request)
 
         acm::Request::SetControlLineState(cls) => {
             semidap::info!(
-                "SET_CONTROL_LINE_STATE {} rts={} dte_present={}",
+                "SET_CONTROL_LINE_STATE {} rts={} dtr={}",
                 cls.interface,
                 cls.rts as u8,
-                cls.dte_present as u8
+                cls.dtr as u8
             );
 
             let state = EP2IN_STATE.load();
 
-            if cls.dte_present {
+            if cls.dtr {
                 if state == Ep2InState::Off {
-                    let n = TX_BUF.read(ep2in_buf) as u8;
-                    if n != 0 {
-                        semidap::info!("EP2IN: transferring {} bytes", n);
-                        USBD::borrow_unchecked(|usbd| {
-                            usbd.EPIN2_PTR
-                                .write(|w| w.PTR(ep2in_buf.as_mut_ptr() as u32));
-                            usbd.EPIN2_MAXCNT.write(|w| w.MAXCNT(n));
-                            crate::dma_start();
-                            usbd.TASKS_STARTEPIN2.write(|w| w.TASKS_STARTEPIN(1));
-                        });
-                        EP2IN_STATE.store(Ep2InState::InUse);
-                    } else {
-                        EP2IN_STATE.store(Ep2InState::Idle);
-                    }
+                    unsafe { start_epin2(ep2in_buf) }
                 } else {
                     // ignore
                 }
@@ -562,6 +536,36 @@ fn acm_req(ep2in_buf: &mut [u8; 63], ep_state: &mut Ep0State, req: acm::Request)
     }
 
     Ok(())
+}
+
+fn start_epin1(buf: &'static [u8]) {
+    let n = cmp::min(buf.len(), 64) as u8;
+    semidap::info!("EP1IN: sending {} bytes", n);
+
+    USBD::borrow_unchecked(|usbd| {
+        usbd.EPIN1_PTR.write(|w| w.PTR(buf.as_ptr() as u32));
+        usbd.EPIN1_MAXCNT.write(|w| w.MAXCNT(n));
+        crate::dma_start();
+        usbd.TASKS_STARTEPIN1.write(|w| w.TASKS_STARTEPIN(1));
+    });
+}
+
+/// # Safety
+/// This hands `buf` to the DMA. Caller must manually enforce that aliasing rules are respected
+unsafe fn start_epin2(buf: &mut [u8; 63]) {
+    let n = TX_BUF.read(buf) as u8;
+    if n != 0 {
+        semidap::info!("EP2IN: sending {} bytes", n);
+        USBD::borrow_unchecked(|usbd| {
+            usbd.EPIN2_PTR.write(|w| w.PTR(buf.as_ptr() as u32));
+            usbd.EPIN2_MAXCNT.write(|w| w.MAXCNT(n));
+            crate::dma_start();
+            usbd.TASKS_STARTEPIN2.write(|w| w.TASKS_STARTEPIN(1));
+        });
+        EP2IN_STATE.store(Ep2InState::InUse);
+    } else {
+        EP2IN_STATE.store(Ep2InState::Idle);
+    }
 }
 
 fn start_epin0(bytes: &'static [u8], ep_state: &mut Ep0State) {

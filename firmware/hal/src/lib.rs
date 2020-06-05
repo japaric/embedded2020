@@ -33,6 +33,7 @@ pub mod time;
 pub mod timer;
 #[cfg(feature = "usb")]
 pub mod usbd;
+mod util;
 
 /// Reads the 32-bit cycle counter
 pub fn cyccnt() -> u32 {

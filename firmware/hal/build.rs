@@ -204,9 +204,22 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
         dwDTERate: 9_600,
     };
 
+    let serial_state = acm::SerialState {
+        interface: 0,
+        bOverRun: false,
+        bParity: false,
+        bFraming: false,
+        bRingSignal: false,
+        bBreak: false,
+        bTxCarrier: true,
+        bRxCarrier: true,
+    };
+
     let max_packet_size0 = PACKET_SIZE as u8;
     let lcb = line_coding.bytes();
     let lcl = lcb.len();
+    let ssb = serial_state.bytes();
+    let ssl = ssb.len();
     let ddb = device_desc.bytes();
     let ddl = ddb.len();
     let cdb = full_config_desc();
@@ -221,11 +234,17 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
             #[allow(dead_code)]
             #[link_section = ".data.CONFIG_DESC"]
             static CONFIG_DESC: [u8; #cdl] = [#(#cdb,)*];
+
             #[allow(dead_code)]
             #[link_section = ".data.DEVICE_DESC"]
             static DEVICE_DESC: [u8; #ddl] = [#(#ddb,)*];
+
             #[allow(dead_code)]
             static mut LINE_CODING: [u8; #lcl] = [#(#lcb,)*];
+
+            #[allow(dead_code)]
+            #[link_section = ".data.SERIAL_STATE"]
+            static SERIAL_STATE: crate::util::Align4<[u8; #ssl]> = crate::util::Align4([#(#ssb,)*]);
         )
         .to_string(),
     )?;

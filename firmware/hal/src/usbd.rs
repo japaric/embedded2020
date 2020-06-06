@@ -627,29 +627,19 @@ pub struct Tx {
     _not_send_or_sync: NotSendOrSync,
 }
 
-/// CDC ACM receive (host to device) endpoint
-pub struct Rx {
-    _not_send_or_sync: NotSendOrSync,
-}
-
-/// Claims the USB interface
-pub fn claim() -> (Tx, Rx) {
+/// Claims the USB CDC ACM interface
+pub fn serial() -> Tx {
     static ONCE: AtomicBool = AtomicBool::new(false);
 
     if ONCE
         .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
         .is_ok()
     {
-        (
-            Tx {
-                _not_send_or_sync: NotSendOrSync::new(),
-            },
-            Rx {
-                _not_send_or_sync: NotSendOrSync::new(),
-            },
-        )
+        Tx {
+            _not_send_or_sync: NotSendOrSync::new(),
+        }
     } else {
-        semidap::panic!("`usbd` interface has already been claimed")
+        semidap::panic!("`usbd::serial` interface has already been claimed")
     }
 }
 

@@ -76,14 +76,14 @@ impl fmt::Display for Channel {
 
 #[tasks::declare]
 mod task {
-    use core::{mem::MaybeUninit, sync::atomic::Ordering};
+    use core::mem::MaybeUninit;
 
     use pac::RADIO;
-    use pool::{Box, Node};
+    use pool::Node;
 
     use crate::{mem::P, Interrupt0};
 
-    use super::{Event, Lock, Packet, RxState, LOCK, RX_STATE, TX_DONE};
+    use super::{Event, Lock, Packet, RxState, TxState, LOCK, RX_STATE, TX_STATE};
 
     // NOTE(unsafe) all interrupts are still globally masked (`CPSID I`)
     fn init() {
@@ -150,7 +150,7 @@ mod task {
             unsafe {
                 radio
                     .INTENSET
-                    .write(|w| w.CCABUSY(1).CCAIDLE(1).READY(1).FRAMESTART(1).END(1))
+                    .write(|w| w.CCABUSY(1).READY(1).FRAMESTART(1).END(1).PHYEND(1))
             }
         });
 
@@ -168,18 +168,17 @@ mod task {
         match event {
             Event::READY => {}
 
-            Event::CCABUSY => super::todo(),
-
-            Event::CCAIDLE => {
-                semidap::info!("TX: channel clear");
+            Event::CCABUSY => {
+                semidap::info!("TX: channel busy -- releasing the radio");
+                RADIO::borrow_unchecked(|radio| radio.INTENCLR.write(|w| w.PHYEND(1)));
+                LOCK.store(Lock::Free);
+                TX_STATE.store(TxState::Busy)
             }
 
             Event::FRAMESTART => match LOCK.load() {
                 Lock::Free => {
+                    semidap::info!("RX: frame detected -- locking the RADIO");
                     LOCK.store(Lock::Rx);
-
-                    semidap::info!("RX: frame detected");
-                    semidap::info!("RX: locked the RADIO");
                 }
 
                 _ =>
@@ -190,30 +189,22 @@ mod task {
             },
 
             Event::END => match LOCK.load() {
-                Lock::Tx => {
-                    unsafe {
-                        drop(Box::<P>::from_raw(
-                            (super::GET_PACKETPTR() as *mut u8)
-                                .offset(-(Packet::PADDING as isize))
-                                .cast(),
-                        ))
-                    }
-
-                    semidap::info!("TX: freed memory");
-                }
+                Lock::Tx => TX_STATE.store(TxState::TransferEnd),
 
                 Lock::Rx => {
+                    #[cfg(debug_assertions)]
                     if RX_STATE.load() != RxState::Started {
-                        #[cfg(debug_assertions)]
                         super::unreachable()
                     }
 
-                    RX_STATE.store(RxState::Done);
+                    // END & PHYEND are both set by a reception event
+                    RADIO::borrow_unchecked(|radio| radio.EVENTS_PHYEND.zero());
                     LOCK.store(Lock::Free);
-                    semidap::info!("RX: released the RADIO");
+                    RX_STATE.store(RxState::Done);
+                    semidap::info!("RX: received data -- releasing the radio");
                 }
 
-                _ =>
+                Lock::Free =>
                 {
                     #[cfg(debug_assertions)]
                     super::unreachable()
@@ -222,15 +213,16 @@ mod task {
 
             Event::PHYEND => match LOCK.load() {
                 Lock::Tx => {
-                    super::INTENCLR_PHYEND();
                     unsafe { super::INTENSET_FRAMESTART() }
-                    RADIO::borrow_unchecked(|radio| radio.SHORTS.rmw(|_, w| w.PHYEND_DISABLE(0)));
+                    RADIO::borrow_unchecked(|radio| {
+                        radio.SHORTS.rmw(|_, w| w.PHYEND_DISABLE(0));
+                        radio.INTENCLR.write(|w| w.PHYEND(1));
+                    });
 
                     LOCK.store(Lock::Free);
-                    TX_DONE.store(true, Ordering::Relaxed);
+                    TX_STATE.store(TxState::Done);
 
-                    semidap::info!("TX: transmission done");
-                    semidap::info!("TX: released the RADIO");
+                    semidap::info!("TX: transmission done -- releasing the radio");
                 }
 
                 _ =>
@@ -248,7 +240,6 @@ mod task {
 #[derive(binDebug)]
 enum Event {
     CCABUSY,
-    CCAIDLE,
     END,
     FRAMESTART,
     PHYEND,
@@ -277,11 +268,6 @@ impl Event {
                 return Some(Event::CCABUSY);
             }
 
-            if radio.EVENTS_CCAIDLE.read().bits() != 0 {
-                radio.EVENTS_CCAIDLE.zero();
-                return Some(Event::CCAIDLE);
-            }
-
             if radio.EVENTS_END.read().bits() != 0 {
                 radio.EVENTS_END.zero();
                 return Some(Event::END);
@@ -289,9 +275,7 @@ impl Event {
 
             if radio.EVENTS_PHYEND.read().bits() != 0 {
                 radio.EVENTS_PHYEND.zero();
-                if radio.INTENSET.read().PHYEND() != 0 {
-                    return Some(Event::PHYEND);
-                }
+                return Some(Event::PHYEND);
             }
 
             if cfg!(debug_assertions) {
@@ -343,23 +327,35 @@ derive!(RxState);
 
 #[derive(Clone, Copy, PartialEq, binDebug)]
 enum Lock {
-    Free,
+    Free = 0,
 
     /// `Rx.read` is holding the lock on the RADIO
     /// Held from FRAMESTART to PHYEND (see Figure 124)
-    Rx,
+    Rx = 1,
 
     /// `Tx.write` is holding the lock on the RADIO
     /// Held from the start of `Tx.write` to PHYEND (see figure 123)
-    Tx,
+    Tx = 2,
 }
 
 derive!(Lock);
 
-// static SOFT_STATE: Atomic<SoftState> = Atomic::new();
+#[derive(Clone, Copy, PartialEq)]
+#[repr(u8)]
+enum TxState {
+    #[allow(dead_code)]
+    Idle = 0,
+    TransferStart = 1,
+    TransferEnd = 2,
+    Done = 3,
+    Busy = 4,
+}
+
+derive!(TxState);
+
 static LOCK: Atomic<Lock> = Atomic::new();
 static RX_STATE: Atomic<RxState> = Atomic::new();
-static TX_DONE: AtomicBool = AtomicBool::new(false);
+static TX_STATE: Atomic<TxState> = Atomic::new();
 
 /// IEEE 802.15.4 radio (receiver half)
 pub struct Rx {
@@ -375,11 +371,8 @@ impl Rx {
     }
 
     /// Reads one radio packet
-    pub async fn read(&mut self) -> Packet {
+    pub async fn read(&mut self, packet: &mut Packet) {
         clock::has_stabilized().await;
-
-        let mut packet = Packet::new().await;
-        let packetptr = packet.len_ptr_mut() as u32;
 
         let mut retry = true;
         while retry {
@@ -407,10 +400,8 @@ impl Rx {
                                 // the operation that can interrupt this one, also writes to that
                                 // register
 
-                                // NOTE(no-fence) the next store transfers ownership of `packet` to
-                                // the RADIO task but we are using a fresh packet so no need to
-                                // synchronize memory operations
-                                SET_PACKETPTR(packetptr);
+                                crate::dma_start();
+                                SET_PACKETPTR(packet.len_ptr_mut() as u32);
 
                                 RX_STATE.store(RxState::Started);
                                 TASKS_START();
@@ -468,10 +459,6 @@ impl Rx {
             })
             .await;
         }
-
-        semidap::info!("RX.read() -> {}B", packet.len());
-
-        packet
     }
 }
 
@@ -489,14 +476,13 @@ impl Tx {
     }
 
     /// Sends the specified radio packet
-    pub async fn write(&mut self, packet: Packet) {
+    ///
+    /// This method returns once `packet` can be used again but before the last bit of data has been
+    /// transmitted
+    pub async fn write(&mut self, packet: &Packet) -> Result<(), ()> {
         clock::has_stabilized().await;
 
-        semidap::info!("TX.write({}B)", packet.len());
-
-        let packetptr = packet.len_ptr() as u32;
-        // `packet` will be freed in the `RADIO` task
-        mem::forget(packet);
+        self.flush().await;
 
         crate::poll_fn(|| unsafe {
             // NOTE(atomic) because we may need to interrupt an RX task
@@ -513,14 +499,8 @@ impl Tx {
 
                             semidap::info!("TX: locked the RADIO");
 
-                            SET_PACKETPTR(packetptr);
+                            SET_PACKETPTR(packet.len_ptr() as u32);
 
-                            // clear any lingering event set by the `Rx` abstraction
-                            RADIO::borrow_unchecked(|radio| {
-                                radio.EVENTS_PHYEND.zero();
-                            });
-
-                            INTENSET_PHYEND();
                             INTENCLR_FRAMESTART();
                             RADIO::borrow_unchecked(|radio| {
                                 radio.SHORTS.rmw(|_, w| w.PHYEND_DISABLE(1))
@@ -554,6 +534,9 @@ impl Tx {
                             State::RxRu => Poll::Pending,
 
                             State::RxIdle => {
+                                TX_STATE.store(TxState::TransferStart);
+                                INTENSET_PHYEND();
+
                                 // TX transfer will start at some point after the CCA
                                 crate::dma_start();
                                 TASKS_CCASTART();
@@ -574,16 +557,34 @@ impl Tx {
         })
         .await;
 
-        // wait until PHYEND
+        // wait until END or CCABUSY
+        let ok = crate::poll_fn(|| {
+            let state = TX_STATE.load();
+            if state != TxState::TransferStart {
+                Poll::Ready(state != TxState::Busy)
+            } else {
+                Poll::Pending
+            }
+        })
+        .await;
+
+        if ok {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    /// Waits until any pending write has completed
+    pub async fn flush(&mut self) {
         crate::poll_fn(|| {
-            if TX_DONE.load(Ordering::Relaxed) {
-                TX_DONE.store(false, Ordering::Relaxed);
+            if TX_STATE.load() != TxState::TransferEnd {
                 Poll::Ready(())
             } else {
                 Poll::Pending
             }
         })
-        .await
+        .await;
     }
 }
 
@@ -734,11 +735,6 @@ fn TASKS_STOP() {
 }
 
 #[allow(non_snake_case)]
-fn GET_PACKETPTR() -> u32 {
-    RADIO::borrow_unchecked(|radio| radio.PACKETPTR.read().bits())
-}
-
-#[allow(non_snake_case)]
 fn SET_PACKETPTR(ptr: u32) {
     RADIO::borrow_unchecked(|radio| radio.PACKETPTR.write(|w| w.PACKETPTR(ptr)));
 }
@@ -749,18 +745,13 @@ unsafe fn INTENSET_FRAMESTART() {
 }
 
 #[allow(non_snake_case)]
-fn INTENCLR_FRAMESTART() {
-    RADIO::borrow_unchecked(|radio| radio.INTENCLR.write(|w| w.FRAMESTART(1)));
-}
-
-#[allow(non_snake_case)]
 unsafe fn INTENSET_PHYEND() {
     RADIO::borrow_unchecked(|radio| radio.INTENSET.write(|w| w.PHYEND(1)));
 }
 
 #[allow(non_snake_case)]
-fn INTENCLR_PHYEND() {
-    RADIO::borrow_unchecked(|radio| radio.INTENCLR.write(|w| w.PHYEND(1)));
+fn INTENCLR_FRAMESTART() {
+    RADIO::borrow_unchecked(|radio| radio.INTENCLR.write(|w| w.FRAMESTART(1)));
 }
 
 #[allow(non_snake_case)]

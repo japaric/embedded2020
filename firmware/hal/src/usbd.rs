@@ -877,8 +877,7 @@ impl HidIn {
     /// Waits until the any pending write completes
     pub async fn flush(&mut self) {
         crate::poll_fn(|| {
-            let state = EPIN3_STATE.load();
-            if state != EpIn3State::TransferEnd {
+            if EPIN3_STATE.load() != EpIn3State::TransferEnd {
                 Poll::Ready(())
             } else {
                 Poll::Pending

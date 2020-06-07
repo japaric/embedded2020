@@ -850,6 +850,8 @@ impl HidIn {
         })
         .await;
 
+        self.flush().await;
+
         USBD::borrow_unchecked(|usbd| {
             usbd.EPIN3_PTR.write(|w| w.PTR(packet.as_ptr() as u32));
             usbd.EPIN3_MAXCNT.write(|w| w.MAXCNT(packet.len()));

@@ -1,8 +1,9 @@
 //! USB device
 
 use core::{
-    cmp,
+    cmp, ops, ptr, slice,
     sync::atomic::{AtomicBool, Ordering},
+    task::Poll,
 };
 
 use binfmt::derive::binDebug;
@@ -10,9 +11,10 @@ use pac::{
     usbd::{epdatastatus, epinen, epouten, eventcause},
     POWER, USBD,
 };
+use pool::Box;
 use usb2::{cdc::acm, hid, GetDescriptor, Request, StandardRequest};
 
-use crate::{atomic::Atomic, Interrupt1, NotSendOrSync};
+use crate::{atomic::Atomic, mem::P, Interrupt1, NotSendOrSync};
 
 include!(concat!(env!("OUT_DIR"), "/descs.rs"));
 
@@ -30,16 +32,32 @@ static EP2IN_STATE: Atomic<Ep2InState> = Atomic::new();
 
 #[tasks::declare]
 mod task {
+    use core::mem::MaybeUninit;
+
     use pac::{CLOCK, USBD};
+    use pool::Node;
 
-    use crate::{clock, errata, util::Align4, Interrupt0, Interrupt1};
+    use crate::{clock, errata, mem::P, util::Align4, Interrupt0, Interrupt1};
 
-    use super::{Ep0State, Ep2InState, PowerEvent, PowerState, UsbdEvent, EP2IN_STATE, TX_BUF};
+    use super::{
+        Ep0State, Ep2InState, EpIn3State, EpOut3State, PowerEvent, PowerState, UsbdEvent,
+        EP2IN_STATE, EPIN3_STATE, EPOUT3_STATE, TX_BUF,
+    };
 
     static mut PCSTATE: PowerState = PowerState::Off;
 
     // NOTE(unsafe) all interrupts are still globally masked (`CPSID I`)
     fn init() {
+        static mut PACKETS: [MaybeUninit<Node<[u8; P::SIZE as usize]>>; 3] = [
+            MaybeUninit::uninit(),
+            MaybeUninit::uninit(),
+            MaybeUninit::uninit(),
+        ];
+
+        for packet in PACKETS {
+            P::manage(packet)
+        }
+
         // reserve peripherals for HAL use
         pac::POWER::seal();
         pac::USBD::seal();
@@ -57,7 +75,9 @@ mod task {
                     .EPDATA(1)
                     .USBEVENT(1)
                     .USBRESET(1)
+                    .ENDEPIN3(1)
                     .ENDEPOUT0(1)
+                    .ENDEPOUT3(1)
             });
         });
 
@@ -225,7 +245,7 @@ mod task {
 
                 UsbdEvent::EPDATA => {
                     let status = super::EPDATASTATUS();
-                    semidap::debug!("{}", status);
+
                     if status.EPIN2() != 0 {
                         crate::dma_end();
                         if EP2IN_STATE.load() != Ep2InState::InUse {
@@ -235,9 +255,11 @@ mod task {
 
                         unsafe { super::start_epin2(&mut EP2IN_BUF.0) }
                     }
+
                     if status.EPIN1() != 0 {
                         semidap::info!("EP1IN: data sent");
                     }
+
                     if status.EPOUT2() != 0 {
                         // discard received data
                         USBD::borrow_unchecked(|usbd| {
@@ -246,11 +268,31 @@ mod task {
                             usbd.SIZE_EPOUT2.write(|w| w.SIZE(0))
                         });
                     }
+
+                    if status.EPOUT3() != 0 {
+                        semidap::info!("HID: received data");
+                        EPOUT3_STATE.store(EpOut3State::DataReady);
+                    }
+
+                    if status.EPIN3() != 0 {
+                        semidap::info!("HID: data sent");
+                        EPIN3_STATE.store(EpIn3State::Idle);
+                    }
                 }
 
                 UsbdEvent::ENDEPOUT0 => {
                     crate::dma_end();
                     *EP0_STATE = Ep0State::Idle;
+                }
+
+                UsbdEvent::ENDEPIN3 => {
+                    semidap::info!("HID: data to send is ready");
+                    EPIN3_STATE.store(EpIn3State::TransferEnd);
+                }
+
+                UsbdEvent::ENDEPOUT3 => {
+                    semidap::info!("HID: received data has been copied");
+                    EPOUT3_STATE.store(EpOut3State::Done);
                 }
 
                 UsbdEvent::TxWrite => {
@@ -437,6 +479,10 @@ fn std_req(
                                 usbd.EPINEN.write(|w| w.IN0(1).IN1(1).IN2(1).IN3(1));
                                 // TODO? Rx support -- host sends back junk when Tx is used though
                                 usbd.EPOUTEN.write(|w| w.OUT0(1).OUT3(1));
+
+                                EPIN3_STATE.store(EpIn3State::Idle);
+
+                                // start accepting data on EPOUT3
                                 usbd.SIZE_EPOUT3.write(|w| w.SIZE(0));
 
                                 // send a SerialState notification
@@ -709,6 +755,222 @@ impl Tx {
     }
 }
 
+/// HID OUT (host to device) endpoint
+pub struct HidOut {
+    _not_send_or_sync: NotSendOrSync,
+}
+
+derive!(EpOut3State);
+
+#[derive(Clone, Copy, PartialEq)]
+#[repr(u8)]
+enum EpOut3State {
+    #[allow(dead_code)]
+    Idle = 0,
+    DataReady = 1,
+    Done = 2,
+}
+
+static EPOUT3_STATE: Atomic<EpOut3State> = Atomic::new();
+
+impl HidOut {
+    /// Receives a HID packet
+    pub async fn read(&mut self) -> Packet {
+        // wait until the endpoint has received data
+        crate::poll_fn(|| {
+            if EPOUT3_STATE.load() == EpOut3State::DataReady {
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        })
+        .await;
+
+        let mut packet = Packet::new().await;
+
+        // move data from USBD to `packet`
+        packet.len = USBD::borrow_unchecked(|usbd| {
+            let size = usbd.SIZE_EPOUT3.read().SIZE();
+            usbd.EPOUT3_PTR
+                .write(|w| w.PTR(packet.data_ptr_mut() as u32));
+            usbd.EPOUT3_MAXCNT.write(|w| w.MAXCNT(Packet::CAPACITY + 1));
+
+            // omitted because no memory operation is performed on `packet`
+            // crate::dma_start();
+            usbd.TASKS_STARTEPOUT3.write(|w| w.TASKS_STARTEPOUT(1));
+            size
+        });
+
+        // wait until transfer is done
+        crate::poll_fn(|| {
+            if EPOUT3_STATE.load() == EpOut3State::Done {
+                crate::dma_end();
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        })
+        .await;
+
+        packet
+    }
+}
+
+/// HID IN (device to host) endpoint
+pub struct HidIn {
+    _not_send_or_sync: NotSendOrSync,
+}
+
+derive!(EpIn3State);
+
+#[derive(Clone, Copy, PartialEq)]
+#[repr(u8)]
+enum EpIn3State {
+    Off = 0,
+    Idle = 1,
+    TransferStart = 2,
+    TransferEnd = 3,
+}
+
+static EPIN3_STATE: Atomic<EpIn3State> = Atomic::new();
+
+impl HidIn {
+    /// Sends a HID packet
+    ///
+    /// Note that this returns after `packet` can be used but before the data has been put "on the
+    /// wire"
+    pub async fn write(&mut self, packet: &Packet) {
+        // wait until the endpoint has been enabled
+        crate::poll_fn(|| {
+            if EPIN3_STATE.load() == EpIn3State::Off {
+                Poll::Pending
+            } else {
+                Poll::Ready(())
+            }
+        })
+        .await;
+
+        USBD::borrow_unchecked(|usbd| {
+            usbd.EPIN3_PTR.write(|w| w.PTR(packet.as_ptr() as u32));
+            usbd.EPIN3_MAXCNT.write(|w| w.MAXCNT(packet.len()));
+
+            EPIN3_STATE.store(EpIn3State::TransferStart);
+            crate::dma_start();
+            usbd.TASKS_STARTEPIN3.write(|w| w.TASKS_STARTEPIN(1));
+        });
+
+        // wait until data has been transferred
+        crate::poll_fn(|| {
+            let state = EPIN3_STATE.load();
+            if state == EpIn3State::TransferEnd || state == EpIn3State::Idle {
+                crate::dma_end();
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        })
+        .await;
+    }
+
+    /// Waits until the any pending write completes
+    pub async fn flush(&mut self) {
+        crate::poll_fn(|| {
+            let state = EPIN3_STATE.load();
+            if state != EpIn3State::TransferEnd {
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        })
+        .await;
+    }
+}
+
+/// HID packet
+pub struct Packet {
+    buffer: Box<P>,
+    len: u8,
+}
+
+impl Packet {
+    const PADDING: usize = 4;
+
+    /// How much data this packet can hold
+    pub const CAPACITY: u8 = 64;
+
+    /// Returns a new, empty HID packet with report ID set to 0
+    pub async fn new() -> Self {
+        Packet {
+            buffer: P::alloc().await,
+            len: 0,
+        }
+    }
+
+    /// Returns the length of the packet
+    pub fn len(&self) -> u8 {
+        self.len
+    }
+
+    /// Fills the packet with given `src` data
+    ///
+    /// NOTE `src` data will be truncated to `Self::CAPACITY` bytes
+    pub fn copy_from_slice(&mut self, src: &[u8]) {
+        let len = cmp::min(src.len(), Self::CAPACITY as usize) as u8;
+        unsafe { ptr::copy_nonoverlapping(src.as_ptr(), self.data_ptr_mut(), len.into()) }
+        self.len = len;
+    }
+
+    /// Changes the `len` of the packet
+    ///
+    /// NOTE `len` will be truncated to `Self::CAPACITY` bytes
+    pub fn set_len(&mut self, len: u8) {
+        self.len = cmp::min(len, Self::CAPACITY);
+    }
+
+    fn data_ptr(&self) -> *const u8 {
+        unsafe { self.buffer.as_ptr().add(Self::PADDING) }
+    }
+
+    fn data_ptr_mut(&mut self) -> *mut u8 {
+        unsafe { self.buffer.as_mut_ptr().add(Self::PADDING) }
+    }
+}
+
+impl ops::Deref for Packet {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self.data_ptr(), self.len.into()) }
+    }
+}
+
+impl ops::DerefMut for Packet {
+    fn deref_mut(&mut self) -> &mut [u8] {
+        unsafe { slice::from_raw_parts_mut(self.data_ptr_mut(), self.len.into()) }
+    }
+}
+
+/// Claims the USB HID interface
+pub fn hid() -> (HidOut, HidIn) {
+    static ONCE: AtomicBool = AtomicBool::new(false);
+
+    if ONCE
+        .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+        .is_ok()
+    {
+        (
+            HidOut {
+                _not_send_or_sync: NotSendOrSync::new(),
+            },
+            HidIn {
+                _not_send_or_sync: NotSendOrSync::new(),
+            },
+        )
+    } else {
+        semidap::panic!("`usbd::hid` interface has already been claimed")
+    }
+}
+
 /// USB packet
 #[cfg(TODO)]
 pub struct Packet {
@@ -837,6 +1099,8 @@ impl PowerEvent {
 #[derive(Clone, Copy, binDebug, PartialEq)]
 enum UsbdEvent {
     ENDEPOUT0,
+    ENDEPOUT3,
+    ENDEPIN3,
     EP0DATADONE,
     EP0SETUP,
     EPDATA,
@@ -876,6 +1140,16 @@ impl UsbdEvent {
             if usbd.EVENTS_ENDEPOUT0.read().bits() != 0 {
                 usbd.EVENTS_ENDEPOUT0.zero();
                 return Some(UsbdEvent::ENDEPOUT0);
+            }
+
+            if usbd.EVENTS_ENDEPOUT3.read().bits() != 0 {
+                usbd.EVENTS_ENDEPOUT3.zero();
+                return Some(UsbdEvent::ENDEPOUT3);
+            }
+
+            if usbd.EVENTS_ENDEPIN3.read().bits() != 0 {
+                usbd.EVENTS_ENDEPIN3.zero();
+                return Some(UsbdEvent::ENDEPIN3);
             }
 
             if EP2IN_STATE.load() == Ep2InState::Idle && TX_BUF.bytes_to_read() != 0 {

@@ -10,7 +10,7 @@ use pac::{
     usbd::{epdatastatus, epinen, epouten, eventcause},
     POWER, USBD,
 };
-use usb2::{cdc::acm, GetDescriptor, Request, StandardRequest};
+use usb2::{cdc::acm, hid, GetDescriptor, Request, StandardRequest};
 
 use crate::{atomic::Atomic, Interrupt1, NotSendOrSync};
 
@@ -225,6 +225,7 @@ mod task {
 
                 UsbdEvent::EPDATA => {
                     let status = super::EPDATASTATUS();
+                    semidap::debug!("{}", status);
                     if status.EPIN2() != 0 {
                         crate::dma_end();
                         if EP2IN_STATE.load() != Ep2InState::InUse {
@@ -286,7 +287,7 @@ fn ep0setup(
 
     let req = Request::parse(bmrequesttype, brequest, wvalue, windex, wlength).map_err(|_| {
         semidap::error!(
-            "EP0SETUP: unknown request ({}, {}, {}, {}, {})",
+            "EP0SETUP: unknown request (bmrequesttype={}, brequest={}, wvalue={}, windex={}, wlength={})",
             bmrequesttype,
             brequest,
             wvalue,
@@ -303,6 +304,15 @@ fn ep0setup(
 
             _ => {
                 semidap::error!("received ACM request but device is not yet Configured");
+                return Err(());
+            }
+        },
+
+        Request::Hid(req) => match *usb_state {
+            usb2::State::Configured { .. } => hid_req(req)?,
+
+            _ => {
+                semidap::error!("received HID request but device is not yet Configured");
                 return Err(());
             }
         },
@@ -424,10 +434,10 @@ fn std_req(
                             *usb_state = usb2::State::Configured { address, value };
 
                             USBD::borrow_unchecked(|usbd| {
-                                usbd.EPINEN.write(|w| w.IN0(1).IN1(1).IN2(1));
+                                usbd.EPINEN.write(|w| w.IN0(1).IN1(1).IN2(1).IN3(1));
                                 // TODO? Rx support -- host sends back junk when Tx is used though
-                                // usbd.EPOUTEN.write(|w| w.OUT0(1).OUT2(1));
-                                usbd.SIZE_EPOUT2.write(|w| w.SIZE(0));
+                                usbd.EPOUTEN.write(|w| w.OUT0(1).OUT3(1));
+                                usbd.SIZE_EPOUT3.write(|w| w.SIZE(0));
 
                                 // send a SerialState notification
                                 start_epin1(&SERIAL_STATE.0);
@@ -475,15 +485,20 @@ fn std_req(
 }
 
 fn acm_req(ep2in_buf: &mut [u8; 63], ep_state: &mut Ep0State, req: acm::Request) -> Result<(), ()> {
-    match req {
-        acm::Request::GetLineCoding { interface } => {
-            semidap::info!("GET_LINE_CODING {}", interface);
+    if req.interface != CDC_IFACE {
+        semidap::error!("ACM request sent to the wrong interface");
+        return Err(());
+    }
+
+    match req.kind {
+        acm::Kind::GetLineCoding => {
+            semidap::info!("ACM: GET_LINE_CODING");
 
             start_epin0(unsafe { &LINE_CODING }, ep_state);
         }
 
-        acm::Request::SetLineCoding { interface } => {
-            semidap::info!("SET_LINE_CODING {}", interface);
+        acm::Kind::SetLineCoding => {
+            semidap::info!("ACM: SET_LINE_CODING");
 
             if *ep_state != Ep0State::Idle {
                 #[cfg(debug_assertions)]
@@ -508,17 +523,16 @@ fn acm_req(ep2in_buf: &mut [u8; 63], ep_state: &mut Ep0State, req: acm::Request)
             });
         }
 
-        acm::Request::SetControlLineState(cls) => {
+        acm::Kind::SetControlLineState { rts, dtr } => {
             semidap::info!(
-                "SET_CONTROL_LINE_STATE {} rts={} dtr={}",
-                cls.interface,
-                cls.rts as u8,
-                cls.dtr as u8
+                "ACM: SET_CONTROL_LINE_STATE rts={} dtr={}",
+                rts as u8,
+                dtr as u8
             );
 
             let state = EP2IN_STATE.load();
 
-            if cls.dtr {
+            if dtr {
                 if state == Ep2InState::Off {
                     unsafe { start_epin2(ep2in_buf) }
                 } else {
@@ -533,6 +547,41 @@ fn acm_req(ep2in_buf: &mut [u8; 63], ep_state: &mut Ep0State, req: acm::Request)
             semidap::info!("ACM request acknowledged");
             ep0status()
         }
+    }
+
+    Ok(())
+}
+
+fn hid_req(req: hid::Request) -> Result<(), ()> {
+    if req.interface != HID_IFACE {
+        semidap::error!("HID request sent to the wrong interface");
+        return Err(());
+    }
+
+    match req.kind {
+        hid::Kind::SetIdle {
+            duration,
+            report_id,
+        } => {
+            semidap::info!(
+                "HID: SET_IDLE dur={} report={}",
+                duration.map(|nz| nz.get()).unwrap_or(0),
+                report_id.map(|nz| nz.get()).unwrap_or(0),
+            );
+
+            ep0status()
+        }
+
+        hid::Kind::GetDescriptor { descriptor, length } => match descriptor {
+            hid::GetDescriptor::Report { index } => {
+                semidap::info!("HID: GET_DESCRIPTOR REPORT {} [{}]", index, length);
+
+                // FIXME we should return a valid HID report descriptor here but this seems enough
+                // to use `hidapi` with this device on Linux at least
+
+                return Err(());
+            }
+        },
     }
 
     Ok(())

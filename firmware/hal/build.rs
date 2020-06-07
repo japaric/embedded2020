@@ -29,11 +29,13 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
         cdc::{self, acm, call, header, union},
         configuration::{self, bmAttributes},
         device::{self, bMaxPacketSize0},
-        endpoint, ia, interface, Direction, Endpoint,
+        endpoint, hid, ia, interface, Direction, Endpoint,
     };
 
     const PACKET_SIZE: bMaxPacketSize0 = bMaxPacketSize0::B64;
     const CONFIG_VAL: u8 = 1;
+    const CDC_IFACE: u8 = 0;
+    const HID_IFACE: u8 = 2;
 
     let device_desc = device::Descriptor {
         // IAD model
@@ -57,7 +59,7 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
         let config = configuration::Descriptor {
             bConfigurationValue: NonZeroU8::new(CONFIG_VAL).unwrap(),
             bMaxPower: 250, // 500 mA
-            bNumInterfaces: NonZeroU8::new(2).unwrap(),
+            bNumInterfaces: NonZeroU8::new(3).unwrap(),
             bmAttributes: bmAttributes {
                 remote_wakeup: false,
                 self_powered: false,
@@ -76,7 +78,7 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
             };
 
             let ia = ia::Descriptor {
-                bFirstInterface: 0,
+                bFirstInterface: CDC_IFACE,
                 bFunctionClass: comm.class(),
                 bFunctionSubClass: comm.subclass(),
                 bFunctionProtocol: comm.protocol(),
@@ -88,7 +90,7 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
 
             let iface0 = interface::Descriptor {
                 bAlternativeSetting: 0,
-                bInterfaceNumber: 0,
+                bInterfaceNumber: CDC_IFACE,
                 bInterfaceClass: comm.class().get(),
                 bInterfaceSubClass: comm.subclass(),
                 bInterfaceProtocol: comm.protocol(),
@@ -153,7 +155,7 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
                 bInterfaceNumber: 1,
                 bInterfaceClass: cdc_data.class().get(),
                 bInterfaceSubClass: cdc_data.subclass(),
-                bInterfaceProtocol: 0,
+                bInterfaceProtocol: cdc_data.protocol(),
                 bNumEndpoints: 2,
                 iInterface: None,
             };
@@ -183,6 +185,57 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
             };
 
             bytes.extend_from_slice(&ep2in.bytes());
+        }
+
+        {
+            let hid = hid::Class;
+
+            let iface2 = interface::Descriptor {
+                bAlternativeSetting: 0,
+                bInterfaceNumber: HID_IFACE,
+                bInterfaceClass: hid.class().get(),
+                bInterfaceSubClass: hid.subclass(),
+                bInterfaceProtocol: hid.protocol(),
+                bNumEndpoints: 2,
+                iInterface: None,
+            };
+
+            bytes.extend_from_slice(&iface2.bytes());
+
+            let report = hid::Descriptor {
+                bCountryCode: hid::Country::NotSupported,
+                wDescriptorLength: 33,
+            };
+
+            bytes.extend_from_slice(&report.bytes());
+
+            let ep3out = endpoint::Descriptor {
+                bEndpointAddress: Endpoint {
+                    direction: Direction::Out,
+                    number: 3,
+                },
+                bInterval: 1,
+                ty: endpoint::Type::Interrupt {
+                    transactions_per_microframe: endpoint::Transactions::_1,
+                },
+                max_packet_size: PACKET_SIZE as u16,
+            };
+
+            bytes.extend_from_slice(&ep3out.bytes());
+
+            let ep3in = endpoint::Descriptor {
+                bEndpointAddress: Endpoint {
+                    direction: Direction::In,
+                    number: 3,
+                },
+                bInterval: 1,
+                ty: endpoint::Type::Interrupt {
+                    transactions_per_microframe: endpoint::Transactions::_1,
+                },
+                max_packet_size: PACKET_SIZE as u16,
+            };
+
+            bytes.extend_from_slice(&ep3in.bytes());
         }
 
         let total_length = bytes.len();
@@ -245,6 +298,11 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
             #[allow(dead_code)]
             #[link_section = ".data.SERIAL_STATE"]
             static SERIAL_STATE: crate::util::Align4<[u8; #ssl]> = crate::util::Align4([#(#ssb,)*]);
+
+            #[allow(dead_code)]
+            const CDC_IFACE: u8 = #CDC_IFACE;
+            #[allow(dead_code)]
+            const HID_IFACE: u8 = #HID_IFACE;
         )
         .to_string(),
     )?;

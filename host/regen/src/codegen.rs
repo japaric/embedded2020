@@ -1,8 +1,10 @@
-use std::{borrow::Cow, time::Instant};
+use std::borrow::Cow;
 
 use heck::SnakeCase;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
+use rand_core::{RngCore as _, SeedableRng as _};
+use rand_xorshift::XorShiftRng;
 
 use crate::{
     codegen,
@@ -16,8 +18,9 @@ pub fn device(device: &Device<'_>) -> String {
 
     items.push(codegen::common(&device.name, &device.extra_docs));
 
+    let mut rng = XorShiftRng::seed_from_u64(rand::random());
     for periph in &device.peripherals {
-        items.push(codegen::peripheral(periph));
+        items.push(codegen::peripheral(periph, &mut rng));
     }
 
     quote!(#(#items)*).to_string()
@@ -63,7 +66,7 @@ fn common(name: &str, extra_docs: &Option<Cow<'_, str>>) -> TokenStream2 {
 }
 
 // TODO gate each peripheral family (e.g. `UARTx`) behind a Cargo feature
-fn peripheral(peripheral: &Peripheral<'_>) -> TokenStream2 {
+fn peripheral(peripheral: &Peripheral<'_>, rng: &mut XorShiftRng) -> TokenStream2 {
     let base_addr = match peripheral.instances {
         Instances::Single { base_address } => util::hex(base_address),
         _ => unimplemented!(),
@@ -74,7 +77,7 @@ fn peripheral(peripheral: &Peripheral<'_>) -> TokenStream2 {
     let mut field_exprs = vec![];
 
     for reg in &peripheral.registers {
-        items.push(codegen::register(reg));
+        items.push(codegen::register(reg, rng));
 
         let doc = reg
             .description
@@ -167,8 +170,7 @@ fn peripheral(peripheral: &Peripheral<'_>) -> TokenStream2 {
     )
 }
 
-fn register(register: &Register<'_>) -> TokenStream2 {
-    let start = Instant::now();
+fn register(register: &Register<'_>, rng: &mut XorShiftRng) -> TokenStream2 {
     let name = format_ident!("{}", *register.name);
     let mod_name = util::ident(&register.name.to_snake_case());
 
@@ -234,7 +236,7 @@ fn register(register: &Register<'_>) -> TokenStream2 {
                 .collect::<Vec<_>>();
             let footprint = format!("{} {{{{ {} }}}}", rname, fields.join(", "));
             let section = format!(".binfmt.{}", footprint);
-            let footprint = format!("{}@{}", footprint, (Instant::now() - start).subsec_nanos());
+            let footprint = format!("{}@{}", footprint, rng.next_u64());
 
             mod_items.push(quote!(
                 /// View into the readable bitfields

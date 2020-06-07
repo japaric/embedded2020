@@ -1,5 +1,4 @@
 use proc_macro::TokenStream;
-use std::time::Instant;
 
 use proc_macro2::Span as Span2;
 use proc_macro_hack::proc_macro_hack;
@@ -161,7 +160,6 @@ pub fn binwrite(input: TokenStream) -> TokenStream {
 }
 
 fn write_(input: Input, newline: bool, tag: bool) -> parse::Result<TokenStream> {
-    let start = Instant::now();
     let mut footprint = input.footprint.value();
 
     let span = input.footprint.span();
@@ -187,9 +185,8 @@ fn write_(input: Input, newline: bool, tag: bool) -> parse::Result<TokenStream> 
     }
 
     let section = format!(".binfmt.{}", footprint);
-    let nanos = (Instant::now() - start).subsec_nanos();
     // add random version to the symbol to avoid linker error due to duplicates
-    let footprint = format!("{}@{}", footprint, nanos);
+    let footprint = format!("{}@{}", footprint, rand::random::<u64>());
     let tag = if tag {
         Some(quote!(<_ as binfmt::binWrite>::write_byte(
             __f__,

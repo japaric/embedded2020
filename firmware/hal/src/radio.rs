@@ -1,7 +1,7 @@
 //! IEEE 802.15.4 radio
 
 use core::{
-    cmp, mem, ops, ptr, slice,
+    cmp, fmt, mem, ops, ptr, slice,
     sync::atomic::{AtomicBool, Ordering},
     task::Poll,
 };
@@ -11,6 +11,68 @@ use pac::RADIO;
 use pool::Box;
 
 use crate::{atomic::Atomic, clock, mem::P, Interrupt0, NotSendOrSync};
+
+/// IEEE 802.15.4 channel
+#[derive(Clone, Copy, PartialEq)]
+#[repr(u8)]
+pub enum Channel {
+    /// 2405 MHz
+    _11 = 5,
+    /// 2410 MHz
+    _12 = 10,
+    /// 2415 MHz
+    _13 = 15,
+    /// 2420 MHz
+    _14 = 20,
+    /// 2425 MHz
+    _15 = 25,
+    /// 2430 MHz
+    _16 = 30,
+    /// 2435 MHz
+    _17 = 35,
+    /// 2440 MHz
+    _18 = 40,
+    /// 2445 MHz
+    _19 = 45,
+    /// 2450 MHz
+    _20 = 50,
+    /// 2455 MHz
+    _21 = 55,
+    /// 2460 MHz
+    _22 = 60,
+    /// 2465 MHz
+    _23 = 65,
+    /// 2470 MHz
+    _24 = 70,
+    /// 2475 MHz
+    _25 = 75,
+    /// 2480 MHz
+    _26 = 80,
+}
+
+impl fmt::Display for Channel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Channel::_11 => "11",
+            Channel::_12 => "12",
+            Channel::_13 => "13",
+            Channel::_14 => "14",
+            Channel::_15 => "15",
+            Channel::_16 => "16",
+            Channel::_17 => "17",
+            Channel::_18 => "18",
+            Channel::_19 => "19",
+            Channel::_20 => "20",
+            Channel::_21 => "21",
+            Channel::_22 => "22",
+            Channel::_23 => "23",
+            Channel::_24 => "24",
+            Channel::_25 => "25",
+            Channel::_26 => "26",
+        };
+        f.write_str(s)
+    }
+}
 
 #[tasks::declare]
 mod task {
@@ -42,9 +104,6 @@ mod task {
         RADIO::borrow_unchecked(|radio| {
             const IEEE802154: u8 = 15;
             radio.MODE.write(|w| w.MODE(IEEE802154));
-
-            const CH20: u8 = 50; // 2_450 MHz
-            radio.FREQUENCY.write(|w| w.FREQUENCY(CH20));
 
             // set TX power to its maximum value
             radio.TXPOWER.write(|w| w.TXPOWER(8));
@@ -245,13 +304,17 @@ impl Event {
 }
 
 /// Claims the radio interface
-pub fn claim() -> (Tx, Rx) {
+pub fn claim(chan: Channel) -> (Tx, Rx) {
     static TAKEN: AtomicBool = AtomicBool::new(false);
 
     if TAKEN
         .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
         .is_ok()
     {
+        RADIO::borrow_unchecked(|radio| {
+            radio.FREQUENCY.write(|w| w.FREQUENCY(chan as u8));
+        });
+
         (
             Tx {
                 _not_send_or_sync: NotSendOrSync::new(),
@@ -304,6 +367,13 @@ pub struct Rx {
 }
 
 impl Rx {
+    /// Returns the channel the radio is using
+    pub fn channel(&self) -> Channel {
+        RADIO::borrow_unchecked(|radio| unsafe {
+            mem::transmute(radio.FREQUENCY.read().FREQUENCY())
+        })
+    }
+
     /// Reads one radio packet
     pub async fn read(&mut self) -> Packet {
         clock::has_stabilized().await;
@@ -411,6 +481,13 @@ pub struct Tx {
 }
 
 impl Tx {
+    /// Returns the channel the radio is using
+    pub fn channel(&self) -> Channel {
+        RADIO::borrow_unchecked(|radio| unsafe {
+            mem::transmute(radio.FREQUENCY.read().FREQUENCY())
+        })
+    }
+
     /// Sends the specified radio packet
     pub async fn write(&mut self, packet: Packet) {
         clock::has_stabilized().await;

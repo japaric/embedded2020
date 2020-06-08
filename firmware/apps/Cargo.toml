@@ -7,16 +7,16 @@ publish = false
 version = "0.0.0"
 
 [[bin]]
-name = "bridge"
-required-features = ["radio", "usb"]
+name = "acm"
+required-features = ["usb"]
 
 [[bin]]
 name = "radio"
 required-features = ["radio"]
 
 [[bin]]
-name = "usb"
-required-features = ["usb"]
+name = "hid"
+required-features = ["hid"]
 
 [dependencies]
 asm = { path = "../asm" }
@@ -30,3 +30,4 @@ semidap = { path = "../semidap" }
 [features]
 radio = ["hal/radio"]
 usb = ["hal/usb"]
+hid = ["hal/hid"]

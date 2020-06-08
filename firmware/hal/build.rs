@@ -54,12 +54,19 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
     };
 
     fn full_config_desc() -> Vec<u8> {
+        let hid = env::var_os("CARGO_FEATURE_HID").is_some();
+
         let mut bytes = vec![];
+
+        let mut nifaces = 2;
+        if hid {
+            nifaces += 1;
+        }
 
         let config = configuration::Descriptor {
             bConfigurationValue: NonZeroU8::new(CONFIG_VAL).unwrap(),
             bMaxPower: 250, // 500 mA
-            bNumInterfaces: NonZeroU8::new(3).unwrap(),
+            bNumInterfaces: NonZeroU8::new(nifaces).unwrap(),
             bmAttributes: bmAttributes {
                 remote_wakeup: false,
                 self_powered: false,
@@ -187,7 +194,6 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
             bytes.extend_from_slice(&ep2in.bytes());
         }
 
-        let hid = env::var_os("CARGO_FEATURE_HID").is_some();
         if hid {
             let hid = hid::Class;
 

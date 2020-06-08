@@ -121,7 +121,7 @@ mod task {
                     .CILEN(0)
                     // 32-bit zero preamble
                     .PLEN(2)
-                    // LENGTH field does NOT contain the CRC
+                    // LENGTH field (the value) also accounts for the CRC (2 bytes)
                     .CRCINC(1)
                     // no TERM field
                     .TERMLEN(0)

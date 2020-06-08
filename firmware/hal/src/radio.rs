@@ -371,9 +371,10 @@ impl Rx {
     }
 
     /// Reads one radio packet
-    pub async fn read(&mut self, packet: &mut Packet) {
+    pub async fn read(&mut self, packet: &mut Packet) -> Result<u16, u16> {
         clock::has_stabilized().await;
 
+        let mut crcres = false;
         let mut retry = true;
         while retry {
             crate::poll_fn(|| {
@@ -445,6 +446,7 @@ impl Rx {
 
                         RX_STATE.store(RxState::Idle);
                         retry = false;
+                        crcres = CRCSTATUS() == 1;
                         Poll::Ready(())
                     }
 
@@ -458,6 +460,13 @@ impl Rx {
                 }
             })
             .await;
+        }
+
+        let crc = RXCRC() as u16;
+        if crcres {
+            Ok(crc)
+        } else {
+            Err(crc)
         }
     }
 }
@@ -762,6 +771,16 @@ fn STATE() -> State {
         semidap::debug!("State::{}", state);
         state
     })
+}
+
+#[allow(non_snake_case)]
+fn CRCSTATUS() -> u8 {
+    RADIO::borrow_unchecked(|radio| radio.CRCSTATUS.read().CRCSTATUS())
+}
+
+#[allow(non_snake_case)]
+fn RXCRC() -> u32 {
+    RADIO::borrow_unchecked(|radio| radio.RXCRC.read().RXCRC())
 }
 
 fn todo() -> ! {

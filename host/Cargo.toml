@@ -1,10 +1,11 @@
 [workspace]
 members = [
+  "acm-cat",
   "binfmt-parser",
   "cmsis-dap",
   "executor-macros",
+  "hidc",
   "regen",
   "semidap",
   "tasks-macros",
-  "usbc",
 ]

@@ -21,6 +21,7 @@ include!(concat!(env!("OUT_DIR"), "/descs.rs"));
 #[derive(Clone, Copy, PartialEq, binDebug)]
 #[repr(u8)]
 enum Ep2InState {
+    #[allow(dead_code)]
     Off = 0,
     Idle,
     InUse,
@@ -213,7 +214,7 @@ mod task {
                         super::unreachable()
                     }
 
-                    if super::ep0setup(USB_STATE, EP0_STATE, &mut EP2IN_BUF.0).is_err() {
+                    if super::ep0setup(USB_STATE, EP0_STATE).is_err() {
                         super::EP0STALL()
                     }
                 }
@@ -257,7 +258,13 @@ mod task {
                     }
 
                     if status.EPIN1() != 0 {
-                        semidap::info!("EP1IN: data sent");
+                        semidap::info!("EP1IN: notification sent");
+                        semidap::info!("EP2IN: fully enabled");
+
+                        EP2IN_STATE.store(Ep2InState::Idle);
+                        if TX_BUF.bytes_to_read() != 0 {
+                            crate::pend1(Interrupt1::USBD);
+                        }
                     }
 
                     if status.EPOUT2() != 0 {
@@ -295,20 +302,7 @@ mod task {
                     EPOUT3_STATE.store(EpOut3State::Done);
                 }
 
-                UsbdEvent::TxWrite => {
-                    let n = TX_BUF.read(&mut EP2IN_BUF.0) as u8;
-
-                    semidap::info!("EP2IN: transferring {} bytes", n);
-
-                    USBD::borrow_unchecked(|usbd| {
-                        usbd.EPIN2_PTR
-                            .write(|w| w.PTR(EP2IN_BUF.0.as_mut_ptr() as u32));
-                        usbd.EPIN2_MAXCNT.write(|w| w.MAXCNT(n));
-                        crate::dma_start();
-                        usbd.TASKS_STARTEPIN2.write(|w| w.TASKS_STARTEPIN(1));
-                    });
-                    EP2IN_STATE.store(Ep2InState::InUse);
-                }
+                UsbdEvent::TxWrite => unsafe { super::start_epin2(&mut EP2IN_BUF.0) },
             },
         }
 
@@ -316,11 +310,7 @@ mod task {
     }
 }
 
-fn ep0setup(
-    usb_state: &mut usb2::State,
-    ep_state: &mut Ep0State,
-    ep2in_buf: &mut [u8; 63],
-) -> Result<(), ()> {
+fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), ()> {
     let bmrequesttype = BMREQUESTTYPE();
     let brequest = BREQUEST();
     let wvalue = WVALUE();
@@ -342,7 +332,7 @@ fn ep0setup(
         Request::Standard(req) => std_req(usb_state, ep_state, req)?,
 
         Request::Acm(req) => match *usb_state {
-            usb2::State::Configured { .. } => acm_req(ep2in_buf, ep_state, req)?,
+            usb2::State::Configured { .. } => acm_req(ep_state, req)?,
 
             _ => {
                 semidap::error!("received ACM request but device is not yet Configured");
@@ -530,7 +520,7 @@ fn std_req(
     Ok(())
 }
 
-fn acm_req(ep2in_buf: &mut [u8; 63], ep_state: &mut Ep0State, req: acm::Request) -> Result<(), ()> {
+fn acm_req(ep_state: &mut Ep0State, req: acm::Request) -> Result<(), ()> {
     if req.interface != CDC_IFACE {
         semidap::error!("ACM request sent to the wrong interface");
         return Err(());
@@ -576,22 +566,9 @@ fn acm_req(ep2in_buf: &mut [u8; 63], ep_state: &mut Ep0State, req: acm::Request)
                 dtr as u8
             );
 
-            let state = EP2IN_STATE.load();
-
-            if dtr {
-                if state == Ep2InState::Off {
-                    unsafe { start_epin2(ep2in_buf) }
-                } else {
-                    // ignore
-                }
-            } else {
-                // FIXME should cancel on-going transfers
-                EP2IN_STATE.store(Ep2InState::Off);
-            }
-
             // issue a status stage to acknowledge the request
             semidap::info!("ACM request acknowledged");
-            ep0status()
+            ep0status();
         }
     }
 
@@ -751,7 +728,9 @@ impl Tx {
     pub fn write(&mut self, bytes: &[u8]) {
         // FIXME this should use `write_all`
         TX_BUF.write(bytes);
-        crate::pend1(Interrupt1::USBD);
+        if !bytes.is_empty() {
+            crate::pend1(Interrupt1::USBD);
+        }
     }
 }
 

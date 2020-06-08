@@ -26,8 +26,9 @@ hal = { path = "../hal" }
 panic-abort = { path = "../panic-abort" }
 panic-never = "0.1.0"
 semidap = { path = "../semidap" }
+heapless = "0.5.5"
 
 [features]
 radio = ["hal/radio"]
 usb = ["hal/usb"]
-hid = ["hal/hid"]
+hid = ["hal/hid", "usb"]

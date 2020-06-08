@@ -1,0 +1,12 @@
+[package]
+authors = ["Jorge Aparicio <jorge@japaric.io>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+name = "acm-cat"
+publish = false
+version = "0.0.0"
+
+[dependencies]
+anyhow = "1.0.31"
+consts = { path = "../../shared/consts" }
+serialport = "3.3.0"

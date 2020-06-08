@@ -91,8 +91,8 @@ mod task {
         semidap::trace!("POWER");
 
         let event = PowerEvent::next();
-        if let Some(event) = event {
-            semidap::debug!("-> {}", event);
+        if let Some(_event) = event {
+            semidap::debug!("-> {}", _event);
         }
 
         match PCSTATE {
@@ -1158,6 +1158,7 @@ impl UsbdEvent {
     }
 }
 
+#[allow(dead_code)]
 fn unreachable() -> ! {
     disconnect();
     semidap::panic!("unreachable")

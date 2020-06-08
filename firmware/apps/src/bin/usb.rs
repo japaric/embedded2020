@@ -1,21 +1,20 @@
-//! Zero-copy, interrupt-driven, async USB bulk function
-
+#![deny(unused_must_use)]
 #![no_main]
 #![no_std]
 
-use hal::usbd;
+use hal::usbd::{self, Packet};
 use panic_abort as _;
 
 #[no_mangle]
 fn main() -> ! {
-    let (mut epin1, mut epout1) = usbd::claim(); // bulk endpoints
+    let (mut hidout, mut hidin) = usbd::hid();
 
     let task = async {
-        loop {
-            let mut packet = epout1.read().await; // host -> device
-            packet.reverse(); // reverse the host data in place
-            epin1.write(packet).await; // device -> host
-        }
+        let mut packet = Packet::new().await;
+        hidout.read(&mut packet).await;
+        hidin.write(&packet).await;
+        hidin.flush().await;
+        semidap::exit(0)
     };
 
     executor::run!(task)

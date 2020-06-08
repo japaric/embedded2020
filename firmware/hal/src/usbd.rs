@@ -775,7 +775,7 @@ static EPOUT3_STATE: Atomic<EpOut3State> = Atomic::new();
 
 impl HidOut {
     /// Receives a HID packet
-    pub async fn read(&mut self) -> Packet {
+    pub async fn read(&mut self, packet: &mut Packet) {
         // wait until the endpoint has received data
         crate::poll_fn(|| {
             if EPOUT3_STATE.load() == EpOut3State::DataReady {
@@ -785,8 +785,6 @@ impl HidOut {
             }
         })
         .await;
-
-        let mut packet = Packet::new().await;
 
         // move data from USBD to `packet`
         packet.len = USBD::borrow_unchecked(|usbd| {
@@ -811,8 +809,6 @@ impl HidOut {
             }
         })
         .await;
-
-        packet
     }
 }
 

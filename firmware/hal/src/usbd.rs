@@ -948,6 +948,7 @@ impl ops::DerefMut for Packet {
 }
 
 /// Claims the USB HID interface
+#[cfg(feature = "hid")]
 pub fn hid() -> (HidOut, HidIn) {
     static ONCE: AtomicBool = AtomicBool::new(false);
 

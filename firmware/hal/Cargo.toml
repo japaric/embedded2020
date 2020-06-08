@@ -31,5 +31,6 @@ path = "../pac"
 
 [features]
 flash = []
+hid = ["usb"]
 radio = ["pac/RADIO"]
 usb = ["pac/POWER", "pac/USBD"]

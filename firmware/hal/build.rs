@@ -187,7 +187,8 @@ fn descs(out_dir: &Path) -> Result<(), Box<dyn Error>> {
             bytes.extend_from_slice(&ep2in.bytes());
         }
 
-        {
+        let hid = env::var_os("CARGO_FEATURE_HID").is_some();
+        if hid {
             let hid = hid::Class;
 
             let iface2 = interface::Descriptor {

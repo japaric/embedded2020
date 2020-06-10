@@ -30,6 +30,7 @@ enum Ep2InState {
 derive!(Ep2InState);
 
 static EP2IN_STATE: Atomic<Ep2InState> = Atomic::new();
+static CONFIGVAL_SLICE : [u8; 1] = [CONFIG_VAL.get()];
 
 #[tasks::declare]
 mod task {
@@ -521,8 +522,9 @@ fn std_req(
         }
 
         StandardRequest::GetConfiguration => {
-            semidap::error!("GET_CONFIGURATION");
-            return Err(());
+            // return bConfigurationValue
+            semidap::info!("GET_CONFIGURATION [{}] ..", CONFIGVAL_SLICE[0] as u8);
+            start_epin0(&CONFIGVAL_SLICE, ep_state);
         }
 
         StandardRequest::GetInterface { .. } => {

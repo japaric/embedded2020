@@ -7,5 +7,6 @@ members = [
   "hidc",
   "regen",
   "semidap",
+  "semiprobe",
   "tasks-macros",
 ]

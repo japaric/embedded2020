@@ -1,5 +1,6 @@
 [target.thumbv7em-none-eabi]
-runner = "semidap -v 0d28 -p 0204"
+# runner = "semidap -v 0d28 -p 0204"
+runner = "semiprobe"
 rustflags = [
   "-C", "link-arg=-Tlink.x",
   "-C", "linker=flip-lld",

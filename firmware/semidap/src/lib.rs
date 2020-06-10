@@ -160,13 +160,13 @@ pub fn stdout() -> Channel {
 // NOTE per HID transaction the host will drain 37-48B from the circular buffer (assuming 64B HID
 // packets)
 // NOTE for performance `CAPACITY` should be a power of 2
-const CAPACITY: u16 = 512;
+const CAPACITY: u16 = 4096;
 
 #[no_mangle]
 static mut SEMIDAP_CURSOR: [Cell<u16>; 2] = [Cell::new(0), Cell::new(0)];
 // NOTE buffers must be aligned so that they never span over a 4KB address boundary
 // for example we don't want a buffer with this address range: `0x2000_0fe0..0x2000_1020`
-#[repr(align(512))]
+#[repr(align(4096))]
 struct Align<T>(T);
 #[link_section = ".uninit.SEMIDAP_BUFFER"]
 #[no_mangle]

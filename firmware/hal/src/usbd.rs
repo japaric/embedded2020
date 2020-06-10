@@ -267,6 +267,10 @@ mod task {
                         }
                     }
 
+                    if status.EPIN2() != 0 {
+                        semidap::info!("EP2IN: transfer done");
+                    }
+
                     if status.EPOUT2() != 0 {
                         // discard received data
                         USBD::borrow_unchecked(|usbd| {
@@ -511,8 +515,43 @@ fn std_req(
             ep0status()
         }
 
-        _ => {
-            semidap::error!("unexpected standard request");
+        StandardRequest::ClearFeature(..) => {
+            semidap::error!("CLEAR_FEATURE (..)");
+            return Err(());
+        }
+
+        StandardRequest::GetConfiguration => {
+            semidap::error!("GET_CONFIGURATION");
+            return Err(());
+        }
+
+        StandardRequest::GetInterface { .. } => {
+            semidap::error!("GET_INTERFACE (..)");
+            return Err(());
+        }
+
+        StandardRequest::GetStatus(..) => {
+            semidap::error!("GET_STATUS (..)");
+            return Err(());
+        }
+
+        StandardRequest::SetDescriptor { .. } => {
+            semidap::error!("SET_DESCRIPTOR (..)");
+            return Err(());
+        }
+
+        StandardRequest::SetFeature(..) => {
+            semidap::error!("SET_FEATURE (..)");
+            return Err(());
+        }
+
+        StandardRequest::SetInterface { .. } => {
+            semidap::error!("SET_INTERFACE (..)");
+            return Err(());
+        }
+
+        StandardRequest::SynchFrame { .. } => {
+            semidap::error!("SYNCH_FRAME (..)");
             return Err(());
         }
     }

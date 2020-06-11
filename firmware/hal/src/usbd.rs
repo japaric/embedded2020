@@ -30,6 +30,8 @@ enum Ep2InState {
 derive!(Ep2InState);
 
 static EP2IN_STATE: Atomic<Ep2InState> = Atomic::new();
+// put this variable in RAM or EasyDMA will fail
+#[link_section = ".data.CONFIGVAL_SLICE"]
 static CONFIGVAL_SLICE : [u8; 1] = [CONFIG_VAL.get()];
 
 #[tasks::declare]

@@ -15,8 +15,8 @@ mod verify;
 use std::{fs, path::Path};
 
 fn main() -> Result<(), anyhow::Error> {
-    gen_cm(Path::new("../../shared/cm/src/lib.rs"))?;
-    gen_nrf52(Path::new("../../firmware/pac/src/lib.rs"))?;
+    gen_cm(Path::new("../../../shared/cm/src/lib.rs"))?;
+    gen_nrf52(Path::new("../../../firmware/pac/src/lib.rs"))?;
 
     Ok(())
 }

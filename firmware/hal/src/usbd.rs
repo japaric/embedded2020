@@ -16,6 +16,13 @@ use usb2::{cdc::acm, hid, GetDescriptor, Request, StandardRequest};
 
 use crate::{atomic::Atomic, mem::P, Interrupt1, NotSendOrSync};
 
+// todo store this somewhere else once it works
+// (see configval creation in build.rs -> descs.rs)
+
+// todo how do I get to len 33? -> look into data format some more to see if item headers should be added somewhere?
+//static RPD_BYTES : [u8; 17] = [0x00, 0xff, 0x01, 0x01, 0x00, 0xff, 0x00, 0x08, 0x40, 0x01, 0x02, 0x40, 0x01, 0x02, 0x01, 0x01, 0x02, ];
+static RPD_BYTES : [u8; 5] = [0x00; 5];
+
 include!(concat!(env!("OUT_DIR"), "/descs.rs"));
 
 #[derive(Clone, Copy, PartialEq, binDebug)]
@@ -214,6 +221,7 @@ mod task {
                 UsbdEvent::EP0SETUP => {
                     #[cfg(debug_assertions)]
                     if *EP0_STATE != Ep0State::Idle {
+                        semidap::info!("Errror: Ep0State should be idle");
                         super::unreachable()
                     }
 
@@ -335,6 +343,13 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
         );
     })?;
 
+    // TODO DELETEME no patience => shit debugging code
+    match ep_state {
+        Ep0State::Idle => semidap::info!("Ep0State [Idle] .."),
+        Ep0State::Read => semidap::info!("Ep0State [Read] .."),
+        Ep0State::Write{..} => semidap::info!("Ep0State [Write] .."),
+    }
+
     match req {
         Request::Standard(req) => std_req(usb_state, ep_state, req)?,
 
@@ -348,7 +363,7 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
         },
 
         Request::Hid(req) => match *usb_state {
-            usb2::State::Configured { .. } => hid_req(req)?,
+            usb2::State::Configured { .. } => hid_req(req, ep_state)?,
 
             _ => {
                 semidap::error!("received HID request but device is not yet Configured");
@@ -618,7 +633,7 @@ fn acm_req(ep_state: &mut Ep0State, req: acm::Request) -> Result<(), ()> {
     Ok(())
 }
 
-fn hid_req(req: hid::Request) -> Result<(), ()> {
+fn hid_req(req: hid::Request, _ep_state: &mut Ep0State) -> Result<(), ()> {
     if req.interface != HID_IFACE {
         semidap::error!("HID request sent to the wrong interface");
         return Err(());
@@ -642,10 +657,18 @@ fn hid_req(req: hid::Request) -> Result<(), ()> {
             hid::GetDescriptor::Report { index } => {
                 semidap::info!("HID: GET_DESCRIPTOR REPORT {} [{}]", index, length);
 
-                // FIXME we should return a valid HID report descriptor here but this seems enough
-                // to use `hidapi` with this device on Linux at least
+                // return random hardcoded report descriptor to make mac os happy
 
-                return Err(());
+                let (_, mut hid_in) = hid();
+                let async_block = async {
+                    let mut packet = Packet::new().await;
+                    packet.copy_from_slice(&RPD_BYTES);
+                    hid_in.write(&packet).await;
+                };
+
+                executor::run!(async_block);
+
+                // Err(());
             }
         },
     }

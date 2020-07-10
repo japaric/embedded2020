@@ -20,6 +20,7 @@ ring = { path = "../ring" }
 semidap = { path = "../semidap" }
 tasks = { path = "../tasks" }
 usb2 = { git = "https://github.com/japaric/usb2" }
+executor = { path = "../executor" }
 
 [dependencies.cm]
 features = ["DCB", "DWT", "NVIC"]

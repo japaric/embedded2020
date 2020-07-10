@@ -797,7 +797,7 @@ static EPOUT3_STATE: Atomic<EpOut3State> = Atomic::new();
 
 impl HidOut {
     /// Receives a HID packet
-    pub async fn read(&mut self, packet: &mut Packet) {
+    pub async fn recv(&mut self, packet: &mut Packet) {
         // wait until the endpoint has received data
         crate::poll_fn(|| {
             if EPOUT3_STATE.load() == EpOut3State::DataReady {
@@ -857,7 +857,7 @@ impl HidIn {
     ///
     /// Note that this returns after `packet` can be used but before the data has been put "on the
     /// wire"
-    pub async fn write(&mut self, packet: &Packet) {
+    pub async fn send(&mut self, packet: &Packet) {
         // wait until the endpoint has been enabled
         crate::poll_fn(|| {
             if EPIN3_STATE.load() == EpIn3State::Off {

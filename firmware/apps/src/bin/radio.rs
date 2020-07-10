@@ -3,18 +3,18 @@
 #![no_main]
 #![no_std]
 
-use hal::radio;
+use hal::radio::{self, Channel};
 use panic_abort as _;
 
 #[no_mangle]
 fn main() -> ! {
-    let (mut tx, mut rx) = radio::claim();
+    let (mut tx, _) = radio::claim(Channel::_20);
 
     let task = async {
-        loop {
-            let packet = rx.read().await;
-            tx.write(packet).await;
-        }
+        let mut packet = radio::Packet::new().await;
+        packet.copy_from_slice(b"hello");
+        tx.write(&packet).await.ok();
+        semidap::exit(0);
     };
 
     executor::run!(task)

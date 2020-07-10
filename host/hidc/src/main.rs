@@ -24,5 +24,13 @@ fn main() -> Result<(), anyhow::Error> {
     dev.write(&[chan])?;
     println!("requested channel change to channel {}", chan);
 
+    let foo = core::mem::ManuallyDrop::new(dev);
+    println!("post ManuallyDrop");
+    foo.write(args[0].as_bytes())?;
+    println!("post write");
+    let mut buf = [0; 64];
+    let n = foo.read(&mut buf)?;
+    println!("post read");
+    println!("{:?}", std::str::from_utf8(&buf[..n]));
     Ok(())
 }

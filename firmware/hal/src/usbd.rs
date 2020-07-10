@@ -34,6 +34,14 @@ static EP2IN_STATE: Atomic<Ep2InState> = Atomic::new();
 #[link_section = ".data.CONFIGVAL_SLICE"]
 static CONFIGVAL_SLICE : [u8; 1] = [CONFIG_VAL.get()];
 
+// todo store this somewhere else once it works
+// (see configval creation in build.rs -> descs.rs)
+
+// todo how do I get to len 33? -> look into data format some more to see if item headers should be added somewhere?
+//static RPD_BYTES : [u8; 17] = [0x00, 0xff, 0x01, 0x01, 0x00, 0xff, 0x00, 0x08, 0x40, 0x01, 0x02, 0x40, 0x01, 0x02, 0x01, 0x01, 0x02, ];
+static RPD_BYTES : [u8; 5] = [0x00; 5];
+
+
 #[tasks::declare]
 mod task {
     use core::mem::MaybeUninit;
@@ -335,6 +343,13 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
         );
     })?;
 
+    // TODO DELETEME no patience => shit debugging code
+    match ep_state {
+        Ep0State::Idle => semidap::info!("Ep0State [Idle] .."),
+        Ep0State::Read => semidap::info!("Ep0State [Read] .."),
+        Ep0State::Write{..} => semidap::info!("Ep0State [Write] .."),
+    }
+
     match req {
         Request::Standard(req) => std_req(usb_state, ep_state, req)?,
 
@@ -348,7 +363,7 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
         },
 
         Request::Hid(req) => match *usb_state {
-            usb2::State::Configured { .. } => hid_req(req)?,
+            usb2::State::Configured { .. } => hid_req(ep_state, req)?,
 
             _ => {
                 semidap::error!("received HID request but device is not yet Configured");
@@ -618,7 +633,7 @@ fn acm_req(ep_state: &mut Ep0State, req: acm::Request) -> Result<(), ()> {
     Ok(())
 }
 
-fn hid_req(req: hid::Request) -> Result<(), ()> {
+fn hid_req(ep_state: &mut Ep0State, req: hid::Request) -> Result<(), ()> {
     if req.interface != HID_IFACE {
         semidap::error!("HID request sent to the wrong interface");
         return Err(());
@@ -645,7 +660,8 @@ fn hid_req(req: hid::Request) -> Result<(), ()> {
                 // FIXME we should return a valid HID report descriptor here but this seems enough
                 // to use `hidapi` with this device on Linux at least
 
-                return Err(());
+                // TODO wait untiul state is not idle maybe?
+                start_epin0(&RPD_BYTES, ep_state);
             }
         },
     }

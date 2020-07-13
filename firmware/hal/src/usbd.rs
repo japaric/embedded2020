@@ -34,6 +34,35 @@ static EP2IN_STATE: Atomic<Ep2InState> = Atomic::new();
 #[link_section = ".data.CONFIGVAL_SLICE"]
 static CONFIGVAL_SLICE : [u8; 1] = [CONFIG_VAL.get()];
 
+// Random Device Descriptor to make Mac OS and Windows happy
+// TODO store this somewhere else once it works fully
+// (see configval creation in build.rs -> descs.rs)
+static RPD_BYTES : [u8; 33]= [
+    0x06, 0x00, 0xFF, // Item(Global): Usage Page, data= [ 0x00 0xff ] 65280
+    0x09, 0x01,       // Item(Local ): Usage, data= [ 0x01 ] 1
+    0xA1, 0x01,       // Item(Main  ): Collection, data= [ 0x01 ] 1
+                      //               Application
+    0x15, 0x00,       // Item(Global): Logical Minimum, data= [ 0x00 ] 0
+    0x26, 0xFF, 0x00, // Item(Global): Logical Maximum, data= [ 0xff 0x00 ] 255
+    0x75, 0x08,       // Item(Global): Report Size, data= [ 0x08 ] 8
+    0x95, 0x40,       // Item(Global): Report Count, data= [ 0x40 ] 64
+    0x09, 0x01,       // Item(Local ): Usage, data= [ 0x01 ] 1
+    0x81, 0x02,       // Item(Main  ): Input, data= [ 0x02 ] 2
+                      //               Data Variable Absolute No_Wrap Linear
+                      //               Preferred_State No_Null_Position Non_Volatile Bitfield
+    0x95, 0x40,       // Item(Global): Report Count, data= [ 0x40 ] 64
+    0x09, 0x01,       // Item(Local ): Usage, data= [ 0x01 ] 1
+    0x91, 0x02,       // Item(Main  ): Output, data= [ 0x02 ] 2
+                      //               Data Variable Absolute No_Wrap Linear
+                      //               Preferred_State No_Null_Position Non_Volatile Bitfield
+    0x95, 0x01,       // Item(Global): Report Count, data= [ 0x01 ] 1
+    0x09, 0x01,       // Item(Local ): Usage, data= [ 0x01 ] 1
+    0xB1, 0x02,       // Item(Main  ): Feature, data= [ 0x02 ] 2
+                      //               Data Variable Absolute No_Wrap Linear
+                      //               Preferred_State No_Null_Position Non_Volatile Bitfield
+    0xC0              // Item(Main  ): End Collection, data=none
+];
+
 #[tasks::declare]
 mod task {
     use core::mem::MaybeUninit;
@@ -348,7 +377,7 @@ fn ep0setup(usb_state: &mut usb2::State, ep_state: &mut Ep0State) -> Result<(), 
         },
 
         Request::Hid(req) => match *usb_state {
-            usb2::State::Configured { .. } => hid_req(req)?,
+            usb2::State::Configured { .. } => hid_req(ep_state, req)?,
 
             _ => {
                 semidap::error!("received HID request but device is not yet Configured");
@@ -618,7 +647,7 @@ fn acm_req(ep_state: &mut Ep0State, req: acm::Request) -> Result<(), ()> {
     Ok(())
 }
 
-fn hid_req(req: hid::Request) -> Result<(), ()> {
+fn hid_req(ep_state: &mut Ep0State, req: hid::Request) -> Result<(), ()> {
     if req.interface != HID_IFACE {
         semidap::error!("HID request sent to the wrong interface");
         return Err(());
@@ -642,10 +671,9 @@ fn hid_req(req: hid::Request) -> Result<(), ()> {
             hid::GetDescriptor::Report { index } => {
                 semidap::info!("HID: GET_DESCRIPTOR REPORT {} [{}]", index, length);
 
-                // FIXME we should return a valid HID report descriptor here but this seems enough
-                // to use `hidapi` with this device on Linux at least
-
-                return Err(());
+                // return any device descriptor. since we don't plan to use the develompent kit
+                // as a USB HID device, its content is arbitrary.
+                start_epin0(&RPD_BYTES, ep_state);
             }
         },
     }

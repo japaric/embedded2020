@@ -38,11 +38,22 @@ fn main() -> ! {
 
         loop {
             hidout.recv(&mut hidbuf).await;
-            if hidbuf.len() == 1 {
-                if let Ok(chan) = Channel::try_from(hidbuf[0]) {
+
+            let arg = if hidbuf.len() == 1 {
+                // Linux / macOS
+                Some(hidbuf[0])
+            } else if hidbuf.len() == 64 {
+                // Windows (it zero pads the packet)
+                Some(hidbuf[0])
+            } else {
+                None
+            };
+
+            if let Some(arg) = arg {
+                if let Ok(chan) = Channel::try_from(arg) {
                     let mut rtx = rtx.lock().await;
                     rtx.set_channel(chan);
-                    // send a packet to force the radio to listen on the new channel
+                    // send a zero-length packet to force the radio to listen on the new channel
                     rtx.write(&zlp).await.ok();
                     drop(rtx);
 
@@ -55,9 +66,7 @@ fn main() -> ! {
                         .write(b"requested channel is out of range (11-26)\n");
                 }
             } else {
-                stx.lock()
-                    .await
-                    .write(b"HID packet must be one-byte long\n");
+                stx.lock().await.write(b"invalid HID packet\n");
             }
         }
     };

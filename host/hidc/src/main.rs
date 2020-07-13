@@ -7,7 +7,7 @@ fn main() -> Result<(), anyhow::Error> {
     let args = env::args()
         .skip(1) // skip program name
         .collect::<Vec<_>>();
-    ensure!(!args.is_empty(), "expected at least one argument");
+    ensure!(!args.is_empty(), "expected exactly one argument");
 
     let api = HidApi::new()?;
     let dev = api

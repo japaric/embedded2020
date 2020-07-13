@@ -35,8 +35,8 @@ static EP2IN_STATE: Atomic<Ep2InState> = Atomic::new();
 static CONFIGVAL_SLICE : [u8; 1] = [CONFIG_VAL.get()];
 
 // Random Device Descriptor to make Mac OS and Windows happy
-// TODO store this somewhere else once it works fully
-// (see configval creation in build.rs -> descs.rs)
+// NOTE put this variable in RAM or EasyDMA will fail
+#[link_section = ".data.RPD_BYTES"]
 static RPD_BYTES : [u8; 33]= [
     0x06, 0x00, 0xFF, // Item(Global): Usage Page, data= [ 0x00 0xff ] 65280
     0x09, 0x01,       // Item(Local ): Usage, data= [ 0x01 ] 1

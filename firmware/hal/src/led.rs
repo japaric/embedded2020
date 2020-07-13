@@ -7,12 +7,12 @@ use pac::p0;
 // pub(crate) const GREEN: u32 = 1 << 22;
 // pub(crate) const BLUE: u32 = 1 << 24;
 
-// ???
+// Dongle
 // pub(crate) const RED: u32 = 1 << 8;
 // pub(crate) const GREEN: u32 = 1 << 6;
 // pub(crate) const BLUE: u32 = 1 << 12;
 
-// ???
+// DK
 pub(crate) const RED: u32 = 1 << 13;
 pub(crate) const GREEN: u32 = 1 << 14;
 pub(crate) const BLUE: u32 = 1 << 15;

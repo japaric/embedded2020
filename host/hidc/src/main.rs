@@ -21,7 +21,7 @@ fn main() -> Result<(), anyhow::Error> {
     if chan < 11 || chan > 26 {
         bail!("channel is out of range (`11..=26`)")
     }
-    dev.write(&[chan])?;
+    dev.write(&[0, chan])?;
     println!("requested channel change to channel {}", chan);
 
     Ok(())

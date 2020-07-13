@@ -38,6 +38,7 @@ fn main() -> ! {
 
         loop {
             hidout.recv(&mut hidbuf).await;
+            semidap::info!("HID: {}", *hidbuf);
 
             let arg = if hidbuf.len() == 1 {
                 // Linux / macOS

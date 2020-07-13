@@ -41,7 +41,7 @@ static CONFIGVAL_SLICE : [u8; 1] = [CONFIG_VAL.get()];
 //static RPD_BYTES : [u8; 17] = [0x00, 0xff, 0x01, 0x01, 0x00, 0xff, 0x00, 0x08, 0x40, 0x01, 0x02, 0x40, 0x01, 0x02, 0x01, 0x01, 0x02, ];
 //static RPD_BYTES : [u8; 5] = [0x00; 5];
 // blatantly stolen from https://stackoverflow.com/questions/21606991/custom-hid-device-hid-report-descriptor
-static RPD_BYTES : [u8; 27] = [0x06, 0x00, 0xFF,            // (GLOBAL) USAGE_PAGE         0xFF00 Vendor-defined
+static _RPD_BYTES : [u8; 27] = [0x06, 0x00, 0xFF,            // (GLOBAL) USAGE_PAGE         0xFF00 Vendor-defined
 0xA1, 0x01,                  // (MAIN)   COLLECTION         0x01 Application (Usage=0x0: Page=, Usage=, Type=) <-- Warning: USAGE type should be CA (Application)
 0x15, 0x00,                  //   (GLOBAL) LOGICAL_MINIMUM    0x00 (0) <-- Redundant: LOGICAL_MINIMUM is already 0
 0x26, 0xFF, 0x00,            //   (GLOBAL) LOGICAL_MAXIMUM    0x00FF (255)
@@ -55,6 +55,63 @@ static RPD_BYTES : [u8; 27] = [0x06, 0x00, 0xFF,            // (GLOBAL) USAGE_PA
 0x91, 0x02,                  //   (MAIN)   OUTPUT             0x00000002 (64 fields x 8 bits) 0=Data 1=Variable 0=Absolute 0=NoWrap 0=Linear 0=PrefState 0=NoNull 0=NonVolatile 0=Bitmap
 0xC0,];
 
+/*
+Report Descriptor: (length is 33)
+  Item(Global): Usage Page, data= [ 0x00 0xff ] 65280
+                  (null)
+  Item(Local ): Usage, data= [ 0x01 ] 1
+                  (null)
+  Item(Main  ): Collection, data= [ 0x01 ] 1
+                  Application
+  Item(Global): Logical Minimum, data= [ 0x00 ] 0
+  Item(Global): Logical Maximum, data= [ 0xff 0x00 ] 255
+  Item(Global): Report Size, data= [ 0x08 ] 8
+  Item(Global): Report Count, data= [ 0x40 ] 64
+  Item(Local ): Usage, data= [ 0x01 ] 1
+                  (null)
+  Item(Main  ): Input, data= [ 0x02 ] 2
+                  Data Variable Absolute No_Wrap Linear
+                  Preferred_State No_Null_Position Non_Volatile Bitfield
+  Item(Global): Report Count, data= [ 0x40 ] 64
+  Item(Local ): Usage, data= [ 0x01 ] 1
+                  (null)
+  Item(Main  ): Output, data= [ 0x02 ] 2
+                  Data Variable Absolute No_Wrap Linear
+                  Preferred_State No_Null_Position Non_Volatile Bitfield
+  Item(Global): Report Count, data= [ 0x01 ] 1
+  Item(Local ): Usage, data= [ 0x01 ] 1
+                  (null)
+  Item(Main  ): Feature, data= [ 0x02 ] 2
+                  Data Variable Absolute No_Wrap Linear
+                  Preferred_State No_Null_Position Non_Volatile Bitfield
+  Item(Main  ): End Collection, data=none
+*/
+
+static RPD_BYTES_2 : [u8; 33]= [
+    0x06, 0x00, 0xFF, // Item(Global): Usage Page, data= [ 0x00 0xff ] 65280
+    0x09, 0x01,       // Item(Local ): Usage, data= [ 0x01 ] 1
+    0xA1, 0x01,       // Item(Main  ): Collection, data= [ 0x01 ] 1
+                      //               Application
+    0x15, 0x00,       // Item(Global): Logical Minimum, data= [ 0x00 ] 0
+    0x26, 0xFF, 0x00, // Item(Global): Logical Maximum, data= [ 0xff 0x00 ] 255
+    0x75, 0x08,       // Item(Global): Report Size, data= [ 0x08 ] 8
+    0x95, 0x40,       // Item(Global): Report Count, data= [ 0x40 ] 64
+    0x09, 0x01,       // Item(Local ): Usage, data= [ 0x01 ] 1
+    0x81, 0x02,       // Item(Main  ): Input, data= [ 0x02 ] 2
+                      //               Data Variable Absolute No_Wrap Linear
+                      //               Preferred_State No_Null_Position Non_Volatile Bitfield
+    0x95, 0x40,       // Item(Global): Report Count, data= [ 0x40 ] 64
+    0x09, 0x01,       // Item(Local ): Usage, data= [ 0x01 ] 1
+    0x91, 0x02,       // Item(Main  ): Output, data= [ 0x02 ] 2
+                      //               Data Variable Absolute No_Wrap Linear
+                      //               Preferred_State No_Null_Position Non_Volatile Bitfield
+    0x95, 0x01,       // Item(Global): Report Count, data= [ 0x01 ] 1
+    0x09, 0x01,       // Item(Local ): Usage, data= [ 0x01 ] 1
+    0xB1, 0x02,       // Item(Main  ): Feature, data= [ 0x02 ] 2
+                      //               Data Variable Absolute No_Wrap Linear
+                      //               Preferred_State No_Null_Position Non_Volatile Bitfield
+    0xC0              // Item(Main  ): End Collection, data=none
+];
 
 #[tasks::declare]
 mod task {
@@ -675,7 +732,7 @@ fn hid_req(ep_state: &mut Ep0State, req: hid::Request) -> Result<(), ()> {
                 // to use `hidapi` with this device on Linux at least
 
                 // TODO wait untiul state is not idle maybe?
-                start_epin0(&RPD_BYTES, ep_state);
+                start_epin0(&RPD_BYTES_2, ep_state);
             }
         },
     }

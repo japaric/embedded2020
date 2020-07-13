@@ -11,8 +11,8 @@ fn main() -> ! {
 
     let task = async {
         let mut packet = Packet::new().await;
-        hidout.read(&mut packet).await;
-        hidin.write(&packet).await;
+        hidout.recv(&mut packet).await;
+        hidin.send(&packet).await;
         hidin.flush().await;
         semidap::exit(0)
     };

@@ -1,7 +1,9 @@
 //! IEEE 802.15.4 radio
 
 use core::{
-    cmp, fmt, mem, ops, ptr, slice,
+    cmp,
+    convert::TryFrom,
+    fmt, mem, ops, ptr, slice,
     sync::atomic::{AtomicBool, Ordering},
     task::Poll,
 };
@@ -71,6 +73,32 @@ impl fmt::Display for Channel {
             Channel::_26 => "26",
         };
         f.write_str(s)
+    }
+}
+
+impl TryFrom<u8> for Channel {
+    type Error = ();
+
+    fn try_from(byte: u8) -> Result<Self, ()> {
+        Ok(match byte {
+            11 => Channel::_11,
+            12 => Channel::_12,
+            13 => Channel::_13,
+            14 => Channel::_14,
+            15 => Channel::_15,
+            16 => Channel::_16,
+            17 => Channel::_17,
+            18 => Channel::_18,
+            19 => Channel::_19,
+            20 => Channel::_20,
+            21 => Channel::_21,
+            22 => Channel::_22,
+            23 => Channel::_23,
+            24 => Channel::_24,
+            25 => Channel::_25,
+            26 => Channel::_26,
+            _ => return Err(()),
+        })
     }
 }
 
@@ -482,6 +510,13 @@ impl Tx {
         RADIO::borrow_unchecked(|radio| unsafe {
             mem::transmute(radio.FREQUENCY.read().FREQUENCY())
         })
+    }
+
+    /// Changes the operating channel
+    ///
+    /// NOTE will not be made effective until the radio is re-started
+    pub fn set_channel(&mut self, chan: Channel) {
+        RADIO::borrow_unchecked(|radio| radio.FREQUENCY.write(|w| w.FREQUENCY(chan as u8)))
     }
 
     /// Sends the specified radio packet

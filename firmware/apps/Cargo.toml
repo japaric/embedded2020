@@ -15,18 +15,19 @@ name = "radio"
 required-features = ["radio"]
 
 [[bin]]
-name = "hid"
-required-features = ["hid"]
+name = "loopback"
+required-features = ["hid", "radio"]
 
 [dependencies]
 asm = { path = "../asm" }
+async-core = { path = "../async-core" }
 binfmt = { path = "../../shared/binfmt" }
 executor = { path = "../executor" }
 hal = { path = "../hal" }
+heapless = "0.5.5"
 panic-abort = { path = "../panic-abort" }
 panic-never = "0.1.0"
 semidap = { path = "../semidap" }
-heapless = "0.5.5"
 
 [features]
 radio = ["hal/radio"]

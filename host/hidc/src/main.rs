@@ -22,5 +22,7 @@ fn main() -> Result<(), anyhow::Error> {
         bail!("channel is out of range (`11..=26`)")
     }
     dev.write(&[chan])?;
+    println!("requested channel change to channel {}", chan);
+
     Ok(())
 }

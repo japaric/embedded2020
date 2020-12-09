@@ -30,6 +30,7 @@ panic-never = "0.1.0"
 semidap = { path = "../semidap" }
 
 [features]
+default = ["hid", "radio"]
 radio = ["hal/radio"]
 usb = ["hal/usb"]
 hid = ["hal/hid", "usb"]

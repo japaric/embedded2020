@@ -31,9 +31,11 @@ mod task {
             rtc.CC0.write(|w| w.COMPARE(super::STEP));
         });
 
-        led::Red.on();
-
-        unsafe { crate::unmask0(&[Interrupt0::RTC0]) }
+        // disable heartbeat background task to free up the LED
+        if false {
+            led::Red.on();
+            unsafe { crate::unmask0(&[Interrupt0::RTC0]) }
+        }
     }
 
     fn RTC0() {

@@ -1,12 +1,13 @@
 MEMORY
 {
-  /* NOTE RAM is split as follows */
-  /* - 8 AHB slaves, each connected to a 2x4 KB RAM sections */
-  /* - the 9th AHB slave is connected to 6x32 KB RAM sections */
-  /* NOTE all RAM is aliased at address 0x0080_0000 for use as Code RAM */
-  /* FLASH : ORIGIN = 0x1000, LENGTH = 0x7F000 */
-  FLASH : ORIGIN = 0, LENGTH = 0x7F000
-  RAM : ORIGIN = 0x20000008, LENGTH = 256K
+  /* Bootloader is split in 2 parts: the first part lives in the range
+  0..0x1000; the second part lives at the end of the 1 MB Flash. The range
+  selected here collides with neither */
+  FLASH : ORIGIN = 0x1000, LENGTH = 0x7f000
+
+/* The bootloader uses the first 8 bytes of RAM to preserve state so don't
+touch them */
+RAM   : ORIGIN = 0x20000008, LENGTH = 0x3fff8
 }
 
 ENTRY(Reset);

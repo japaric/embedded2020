@@ -1,9 +1,8 @@
 [target.thumbv7em-none-eabi]
-# runner = "semidap -v 0d28 -p 0204"
-runner = "semiprobe"
+# from the ferrous-systems/embedded-trainings-2020 repository
+runner = "dongle-flash"
 rustflags = [
   "-C", "link-arg=-Tlink.x",
-  "-C", "linker=flip-lld",
 ]
 
 [build]

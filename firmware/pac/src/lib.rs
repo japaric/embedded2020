@@ -1,3 +1,3 @@
 #![no_std]
 
-compile_error!("run the `regen` tool before compiling this crate");
+compile_error!("run the `host/regen/` tool before compiling this crate");

@@ -1,3 +1,7 @@
+Hey, how time flies! It's now 2021 (at time of writing). This experiment is over and the repository has been archived. Some of the ideas here live on as part of the [knurling project](https://github.com/knurling-rs).
+
+---
+
 # `embedded2020`
 
 > A fresh look at embedded Rust development
